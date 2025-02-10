@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Analysis from "@/pages/analysis";
+import { LazyMotion, domAnimation } from "framer-motion";
 
 function Router() {
   return (
@@ -19,8 +20,10 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router />
-      <Toaster />
+      <LazyMotion features={domAnimation}>
+        <Router />
+        <Toaster />
+      </LazyMotion>
     </QueryClientProvider>
   );
 }

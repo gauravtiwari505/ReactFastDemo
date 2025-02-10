@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import AnalysisSection from "@/components/analysis-section";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import type { Analysis } from "@shared/schema";
 import AnimatedScore from "@/components/animated-score";
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 
 export default function Analysis() {
   const { id } = useParams();

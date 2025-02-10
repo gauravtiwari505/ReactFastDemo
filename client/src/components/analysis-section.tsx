@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 import AnimatedScore from "./animated-score";
 
 interface AnalysisSectionProps {
