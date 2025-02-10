@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import AnalysisSection from "@/components/analysis-section";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import type { Analysis } from "@shared/schema";
+import AnimatedScore from "@/components/animated-score";
+import { motion } from "framer-motion";
 
 export default function Analysis() {
   const { id } = useParams();
@@ -43,14 +44,18 @@ export default function Analysis() {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-4 mb-6"
+        >
           <Link href="/">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <h1 className="text-4xl font-bold">Analysis Results</h1>
-        </div>
+        </motion.div>
 
         {analysis.status === "processing" ? (
           <Card>
@@ -64,28 +69,30 @@ export default function Analysis() {
           </Card>
         ) : (
           <>
-            <Card className="mb-6">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Overall Score</h2>
-                  <span className="text-2xl font-bold">
-                    {analysis.results?.overallScore}%
-                  </span>
-                </div>
-                <Progress 
-                  value={analysis.results?.overallScore} 
-                  className="h-3"
-                />
-              </CardContent>
-            </Card>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <Card className="mb-6">
+                <CardContent className="pt-6">
+                  <AnimatedScore 
+                    label="Overall Score"
+                    score={analysis.results?.overallScore || 0}
+                    delay={0}
+                  />
+                </CardContent>
+              </Card>
+            </motion.div>
 
             <div className="space-y-6">
-              {analysis.results?.sections.map((section) => (
+              {analysis.results?.sections.map((section, index) => (
                 <AnalysisSection
                   key={section.name}
                   name={section.name}
                   score={section.score}
                   suggestions={section.suggestions}
+                  index={index}
                 />
               ))}
             </div>
