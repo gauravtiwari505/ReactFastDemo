@@ -14,7 +14,14 @@ export default function Home() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("resume", file);
-      const res = await apiRequest("POST", "/api/analyze", formData);
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error("Upload failed");
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -39,7 +46,7 @@ export default function Home() {
         <h1 className="text-4xl font-bold mb-6 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
           Resume Analysis
         </h1>
-        
+
         <Card className="mb-8">
           <CardContent className="pt-6">
             <PdfUpload 
