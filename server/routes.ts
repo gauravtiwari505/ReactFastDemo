@@ -6,7 +6,7 @@ import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
 import nodemailer from "nodemailer";
-import PDFDocument from "pdfkit";
+import puppeteer from "puppeteer";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -29,57 +29,157 @@ const transporter = nodemailer.createTransport({
 });
 
 async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const doc = new PDFDocument();
-
-    // Collect the PDF data
-    doc.on('data', (chunk) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    // Add content to the PDF
-    doc.fontSize(24).text('Resume Analysis Report', { align: 'center' });
-    doc.moveDown();
-
-    // Overview section
-    doc.fontSize(18).text('Overview');
-    doc.fontSize(12).text(analysis.results.overview);
-    doc.moveDown();
-
-    // Overall Score
-    doc.fontSize(18).text(`Overall Score: ${analysis.results.overallScore}%`);
-    doc.moveDown();
-
-    // Key Strengths
-    doc.fontSize(18).text('Key Strengths');
-    analysis.results.strengths.forEach((strength: string) => {
-      doc.fontSize(12).text(`• ${strength}`);
-    });
-    doc.moveDown();
-
-    // Areas for Improvement
-    doc.fontSize(18).text('Areas for Improvement');
-    analysis.results.weaknesses.forEach((weakness: string) => {
-      doc.fontSize(12).text(`• ${weakness}`);
-    });
-    doc.moveDown();
-
-    // Detailed Section Analysis
-    doc.fontSize(18).text('Detailed Section Analysis');
-    analysis.results.sections.forEach((section: any) => {
-      doc.moveDown();
-      doc.fontSize(14).text(`${section.name} - Score: ${section.score}%`);
-      doc.fontSize(12).text(section.content);
-      doc.fontSize(12).text('Suggestions:');
-      section.suggestions.forEach((suggestion: string) => {
-        doc.text(`• ${suggestion}`);
-      });
-    });
-
-    // Finalize the PDF
-    doc.end();
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
+
+  try {
+    const page = await browser.newPage();
+
+    // Generate HTML content with styling
+    const content = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              padding: 40px;
+              max-width: 800px;
+              margin: 0 auto;
+              color: #333;
+            }
+            h1 {
+              color: #1a365d;
+              text-align: center;
+              font-size: 28px;
+              margin-bottom: 30px;
+            }
+            .overview {
+              background: #f8fafc;
+              padding: 20px;
+              border-radius: 8px;
+              margin-bottom: 30px;
+            }
+            .score-section {
+              background: #f0f9ff;
+              padding: 20px;
+              border-radius: 8px;
+              margin-bottom: 30px;
+            }
+            .score {
+              font-size: 24px;
+              color: #0369a1;
+              font-weight: bold;
+            }
+            .section {
+              margin-bottom: 30px;
+            }
+            .section h2 {
+              color: #0369a1;
+              font-size: 20px;
+              margin-bottom: 15px;
+            }
+            .strengths {
+              color: #15803d;
+            }
+            .improvements {
+              color: #b91c1c;
+            }
+            ul {
+              margin: 0;
+              padding-left: 20px;
+            }
+            li {
+              margin-bottom: 8px;
+              line-height: 1.5;
+            }
+            .section-analysis {
+              background: #ffffff;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 20px;
+              margin-bottom: 20px;
+            }
+            .section-score {
+              color: #0369a1;
+              font-weight: bold;
+            }
+            .suggestions {
+              background: #f0f9ff;
+              padding: 15px;
+              border-radius: 4px;
+              margin-top: 10px;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Resume Analysis Report</h1>
+
+          <div class="overview">
+            <h2>Overview</h2>
+            <p>${analysis.results.overview}</p>
+          </div>
+
+          <div class="score-section">
+            <h2>Overall Score</h2>
+            <div class="score">${analysis.results.overallScore}%</div>
+          </div>
+
+          <div class="section">
+            <h2 class="strengths">Key Strengths</h2>
+            <ul>
+              ${analysis.results.strengths.map((s: string) => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+
+          <div class="section">
+            <h2 class="improvements">Areas for Improvement</h2>
+            <ul>
+              ${analysis.results.weaknesses.map((w: string) => `<li>${w}</li>`).join('')}
+            </ul>
+          </div>
+
+          <div class="section">
+            <h2>Detailed Section Analysis</h2>
+            ${analysis.results.sections.map((section: any) => `
+              <div class="section-analysis">
+                <h3>${section.name} <span class="section-score">${section.score}%</span></h3>
+                <p>${section.content}</p>
+                <div class="suggestions">
+                  <h4>Suggestions for Improvement:</h4>
+                  <ul>
+                    ${section.suggestions.map((s: string) => `<li>${s}</li>`).join('')}
+                  </ul>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </body>
+      </html>
+    `;
+
+    await page.setContent(content);
+    await page.emulateMediaType('screen');
+
+    // Generate PDF
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '20px',
+        right: '20px',
+        bottom: '20px',
+        left: '20px'
+      }
+    });
+
+    return pdf;
+  } finally {
+    await browser.close();
+  }
 }
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
