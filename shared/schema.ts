@@ -8,12 +8,16 @@ export const resumeAnalyses = pgTable("resume_analyses", {
   uploadedAt: text("uploaded_at").notNull(),
   status: text("status").notNull(),
   results: json("results").$type<{
+    overview: string;
+    strengths: string[];
+    weaknesses: string[];
+    overallScore: number;
     sections: {
       name: string;
       score: number;
+      content: string;
       suggestions: string[];
     }[];
-    overallScore: number;
   }>(),
 });
 

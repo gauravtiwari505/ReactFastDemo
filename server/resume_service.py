@@ -1,3 +1,4 @@
+import google.generativeai as genai
 from langchain_community.document_loaders import PDFMinerLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
@@ -9,6 +10,10 @@ from pathlib import Path
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 
+# Initialize Gemini
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+model = genai.GenerativeModel('gemini-1.5-pro')
+
 def save_uploaded_file(file_bytes, filename):
     """Save the uploaded file to TMP_DIR."""
     temp_file_path = os.path.join(TMP_DIR, filename)
@@ -16,8 +21,50 @@ def save_uploaded_file(file_bytes, filename):
         temp_file.write(file_bytes)
     return temp_file_path
 
-def analyze_resume(file_bytes, filename):
-    """Process and analyze a resume using Langchain's document loader."""
+async def analyze_resume_section(text: str, section_name: str) -> dict:
+    """Analyze a specific section of the resume using Gemini."""
+    prompt = f"""Analyze the following resume {section_name} section and provide:
+    1. A score out of 100
+    2. A list of specific suggestions for improvement
+    3. An evaluation of the content quality
+
+    Text to analyze:
+    {text}
+
+    Respond in JSON format:
+    {{
+        "score": <number>,
+        "suggestions": [<string>],
+        "content": <string>
+    }}
+    """
+
+    response = await model.generate_content(prompt)
+    return json.loads(response.text)
+
+async def generate_overview(text: str) -> dict:
+    """Generate an overview analysis of the entire resume using Gemini."""
+    prompt = f"""Analyze this resume and provide:
+    1. A brief professional overview
+    2. Top 3 strengths
+    3. Top 3 areas for improvement
+
+    Resume text:
+    {text}
+
+    Respond in JSON format:
+    {{
+        "overview": <string>,
+        "strengths": [<string>, <string>, <string>],
+        "weaknesses": [<string>, <string>, <string>]
+    }}
+    """
+
+    response = await model.generate_content(prompt)
+    return json.loads(response.text)
+
+async def analyze_resume(file_bytes, filename):
+    """Process and analyze a resume using PDFMiner and Gemini."""
     print("Starting resume analysis...", file=sys.stderr)
 
     # Save file temporarily
@@ -30,61 +77,44 @@ def analyze_resume(file_bytes, filename):
         documents = loader.load()
         print(f"Loaded {len(documents)} document(s)", file=sys.stderr)
 
-        # Split into smaller chunks for better analysis
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-        )
-        chunks = text_splitter.split_documents(documents)
-        print(f"Split into {len(chunks)} chunks", file=sys.stderr)
-
         # Extract text content
         full_text = " ".join([doc.page_content for doc in documents])
         print(f"Extracted {len(full_text)} characters of text", file=sys.stderr)
 
-        # Basic section identification (can be enhanced)
-        sections = []
+        # Generate overall analysis
+        overview_analysis = await generate_overview(full_text)
 
-        # Professional Summary
-        if any(keyword in full_text.lower() for keyword in ["summary", "objective", "profile"]):
-            sections.append({
-                "name": "Professional Summary",
-                "score": 85,
-                "suggestions": ["Add more quantifiable achievements"]
+        # Define sections to analyze
+        sections = [
+            "Contact Information",
+            "Professional Summary",
+            "Work Experience",
+            "Skills",
+            "Education",
+            "Languages",
+            "Projects",
+            "Certifications"
+        ]
+
+        # Analyze each section
+        section_results = []
+        for section in sections:
+            section_analysis = await analyze_resume_section(full_text, section)
+            section_results.append({
+                "name": section,
+                **section_analysis
             })
 
-        # Work Experience
-        if any(keyword in full_text.lower() for keyword in ["experience", "work", "employment"]):
-            sections.append({
-                "name": "Work Experience",
-                "score": 90,
-                "suggestions": ["Use more action verbs", "Include metrics and achievements"]
-            })
-
-        # Education
-        if any(keyword in full_text.lower() for keyword in ["education", "degree", "university"]):
-            sections.append({
-                "name": "Education",
-                "score": 95,
-                "suggestions": ["Consider adding relevant coursework"]
-            })
-
-        # Skills
-        if any(keyword in full_text.lower() for keyword in ["skills", "technologies", "tools"]):
-            sections.append({
-                "name": "Skills",
-                "score": 88,
-                "suggestions": ["Group skills by category", "Highlight proficiency levels"]
-            })
-
-        # Calculate overall score based on section scores
-        overall_score = sum(section["score"] for section in sections) / len(sections) if sections else 0
+        # Calculate overall score
+        overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
 
         results = {
-            "sections": sections,
+            **overview_analysis,
+            "sections": section_results,
             "overallScore": overall_score
         }
-        print(f"Analysis results: {json.dumps(results)}", file=sys.stderr)
+
+        print(f"Analysis complete: {json.dumps(results)}", file=sys.stderr)
         return results
 
     finally:
@@ -101,10 +131,11 @@ if __name__ == "__main__":
         print(f"Received file: {filename}", file=sys.stderr)
 
         # Analyze the resume
-        results = analyze_resume(file_bytes, filename)
+        import asyncio
+        results = asyncio.run(analyze_resume(file_bytes, filename))
         print(json.dumps(results))  # Send results back to Node.js
         sys.exit(0)
     except Exception as e:
         print(f"Error during analysis: {str(e)}", file=sys.stderr)
-        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        print(json.dumps({"error": str(e)}))
         sys.exit(1)
