@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { FileCheck2, Gauge, Lightbulb, Upload } from "lucide-react";
+import { FileCheck2, Gauge, Lightbulb } from "lucide-react";
 
 export default function Home() {
   const { toast } = useToast();
@@ -49,14 +49,14 @@ export default function Home() {
         <div className="relative max-w-6xl mx-auto px-6 pt-8 pb-24 text-center">
           {/* Logo */}
           <motion.div
-            className="mb-12"
+            className="flex justify-center items-center mb-12"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
           >
             <img
-              src="/assets/image_1739237826388.png"
+              src="assets/image_1739237826388.png"
               alt="GigFlick Logo"
-              className="h-12 mx-auto"
+              className="h-16 w-auto object-contain"
             />
           </motion.div>
 
