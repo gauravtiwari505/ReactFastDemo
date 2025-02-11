@@ -41,22 +41,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> dict:
         full_text = extract_text_from_pdf(temp_file_path)
         log_info(f"Successfully extracted {len(full_text)} characters of text")
 
-        # Mock analysis for now - we'll enhance this later
-        mock_sections = [
-            {
-                "name": "Summary",
-                "score": 85,
-                "content": "Professional summary is clear and concise",
-                "suggestions": ["Add more specific achievements"]
-            },
-            {
-                "name": "Experience",
-                "score": 90,
-                "content": "Work experience is well detailed",
-                "suggestions": ["Use more action verbs"]
-            }
-        ]
-
+        # Mock analysis for now
         results = {
             "overview": "The resume is well-structured and presents qualifications effectively.",
             "strengths": [
@@ -66,10 +51,22 @@ def analyze_resume(file_bytes: bytes, filename: str) -> dict:
             ],
             "weaknesses": [
                 "Could use more quantifiable achievements",
-                "Some sections could be more detailed",
-                "Consider adding more keywords"
+                "Some sections could be more detailed"
             ],
-            "sections": mock_sections,
+            "sections": [
+                {
+                    "name": "Summary",
+                    "score": 85,
+                    "content": "Professional summary is clear and concise",
+                    "suggestions": ["Add more specific achievements"]
+                },
+                {
+                    "name": "Experience",
+                    "score": 90,
+                    "content": "Work experience is well detailed",
+                    "suggestions": ["Use more action verbs"]
+                }
+            ],
             "overallScore": 88
         }
 
@@ -81,16 +78,20 @@ def analyze_resume(file_bytes: bytes, filename: str) -> dict:
         raise
     finally:
         # Cleanup
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        try:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+        except Exception as e:
+            log_error(f"Cleanup error: {str(e)}")
 
 if __name__ == "__main__":
     try:
-        # Read input from Node.js
+        # Ensure stdin is not empty
         input_raw = sys.stdin.read()
         if not input_raw:
             raise ValueError("No input received")
 
+        # Parse input and decode PDF data
         input_data = json.loads(input_raw)
         file_bytes = base64.b64decode(input_data["file_bytes"])
         filename = input_data["filename"]
@@ -98,12 +99,19 @@ if __name__ == "__main__":
 
         # Analyze the resume
         results = analyze_resume(file_bytes, filename)
-        # Ensure only one JSON output on stdout
+
+        # Ensure stderr is flushed before writing to stdout
         sys.stderr.flush()
-        print(json.dumps(results), flush=True)
+
+        # Write single JSON output to stdout
+        json_output = json.dumps(results)
+        sys.stdout.write(json_output)
+        sys.stdout.flush()
+
     except Exception as e:
         log_error(f"Error during analysis: {str(e)}")
-        # Ensure error response is valid JSON
         error_response = {"error": True, "message": str(e)}
-        print(json.dumps(error_response), flush=True)
+        json_output = json.dumps(error_response)
+        sys.stdout.write(json_output)
+        sys.stdout.flush()
         sys.exit(1)

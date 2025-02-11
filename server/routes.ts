@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
-import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
+import { insertAnalysisSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
 
@@ -24,26 +24,34 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
     ]);
 
     let resultData = "";
-    let errorData = "";
 
+    // Handle stdout separately for JSON data
     pythonProcess.stdout.on("data", (data) => {
       resultData += data.toString();
     });
 
+    // Log stderr but don't mix with resultData
     pythonProcess.stderr.on("data", (data) => {
       console.error(`Python Error: ${data}`);
-      errorData += data.toString();
     });
 
     pythonProcess.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(errorData || `Python process exited with code ${code}`));
+        reject(new Error("Python process failed"));
         return;
       }
+
       try {
-        const results = JSON.parse(resultData);
+        // Clean the resultData string and parse JSON
+        const cleanedResult = resultData.trim();
+        if (!cleanedResult) {
+          reject(new Error("No output from Python process"));
+          return;
+        }
+
+        const results = JSON.parse(cleanedResult);
         if (results.error) {
-          reject(new Error(results.message || results.error));
+          reject(new Error(results.message || "Analysis failed"));
           return;
         }
         resolve(results);
