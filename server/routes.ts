@@ -4,7 +4,6 @@ import { storage } from "./storage";
 import multer from "multer";
 import { insertAnalysisSchema } from "@shared/schema";
 import { spawn } from "child_process";
-import path from "path";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -23,49 +22,30 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
       "server/resume_service.py",
     ]);
 
-    let stdoutData = "";
-    let stderrData = "";
+    let stdout = "";
 
-    // Collect stdout data
     pythonProcess.stdout.on("data", (data) => {
-      stdoutData += data.toString();
+      stdout += data.toString();
     });
 
-    // Collect stderr data separately for debugging
     pythonProcess.stderr.on("data", (data) => {
       console.error(`Python Error: ${data}`);
-      stderrData += data.toString();
     });
 
     pythonProcess.on("close", (code) => {
-      console.log("Python process output:", stdoutData);
-
       if (code !== 0) {
-        reject(new Error(`Python process failed with code ${code}. Error: ${stderrData}`));
+        reject(new Error("Failed to analyze PDF"));
         return;
       }
 
       try {
-        const cleanedOutput = stdoutData.trim();
-        if (!cleanedOutput) {
-          reject(new Error("No output from Python process"));
-          return;
-        }
-
-        const results = JSON.parse(cleanedOutput);
-        if (results.error) {
-          reject(new Error(results.message));
-          return;
-        }
-
+        const results = JSON.parse(stdout);
         resolve(results);
       } catch (err) {
-        console.error("Failed to parse Python output. Raw output:", stdoutData);
-        reject(new Error(`Failed to parse Python output: ${err.message}`));
+        reject(new Error("Failed to parse analysis results"));
       }
     });
 
-    // Send input to Python process
     pythonProcess.stdin.write(JSON.stringify({
       file_bytes: fileBuffer.toString("base64"),
       filename: filename
@@ -74,73 +54,7 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   });
 }
 
-async function checkAccessibility(fileBuffer: Buffer): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const pythonProcess = spawn("python", [
-      "server/pdf_accessibility.py",
-    ]);
-
-    let resultData = "";
-
-    pythonProcess.stdout.on("data", (data) => {
-      resultData += data.toString();
-    });
-
-    pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python Error: ${data}`);
-    });
-
-    pythonProcess.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}`));
-        return;
-      }
-      try {
-        const results = JSON.parse(resultData);
-        resolve(results);
-      } catch (err) {
-        reject(new Error("Failed to parse Python output"));
-      }
-    });
-
-    pythonProcess.stdin.write(JSON.stringify({
-      file_bytes: fileBuffer.toString("base64")
-    }));
-    pythonProcess.stdin.end();
-  });
-}
-
-async function generateAndSendReport(analysis: any): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const pythonProcess = spawn("python", [
-      "server/report_service.py",
-    ]);
-
-    let resultData = "";
-
-    pythonProcess.stdout.on("data", (data) => {
-      resultData += data.toString();
-    });
-
-    pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python Error: ${data}`);
-    });
-
-    pythonProcess.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}`));
-        return;
-      }
-      resolve();
-    });
-
-    pythonProcess.stdin.write(JSON.stringify(analysis));
-    pythonProcess.stdin.end();
-  });
-}
-
 export function registerRoutes(app: Express): Server {
-  // Initial analysis endpoint without email
   app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ message: "No PDF file provided" });
@@ -153,20 +67,13 @@ export function registerRoutes(app: Express): Server {
         status: "processing"
       });
 
-      // Process the PDF using our Python service
       const results = await analyzePDF(req.file.buffer, req.file.originalname);
 
-      // Check accessibility
-      const accessibilityResults = await checkAccessibility(req.file.buffer);
-      results.accessibility = accessibilityResults;
-
-      // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
         results: results
       });
 
-      // Store section scores
       if (results.sections) {
         for (const section of results.sections) {
           await storage.createScore({
@@ -183,36 +90,7 @@ export function registerRoutes(app: Express): Server {
       res.json(updatedAnalysis);
     } catch (error) {
       console.error("Analysis error:", error);
-      res.status(500).json({ message: error.message || "Failed to analyze resume" });
-    }
-  });
-
-  // New endpoint for sending email report
-  app.post("/api/analysis/:id/send-report", async (req, res) => {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ message: "Email address is required" });
-    }
-
-    try {
-      const analysis = await storage.getAnalysis(Number(req.params.id));
-      if (!analysis) {
-        return res.status(404).json({ message: "Analysis not found" });
-      }
-
-      await generateAndSendReport(analysis);
-
-      // Update analysis with email information
-      await storage.updateAnalysis(analysis.id, {
-        emailTo: email,
-        emailSentAt: new Date().toISOString()
-      });
-
-      res.json({ message: "Report sent successfully" });
-    } catch (error) {
-      console.error("Failed to send report:", error);
-      res.status(500).json({ message: "Failed to send report" });
+      res.status(500).json({ message: "Failed to analyze resume" });
     }
   });
 
