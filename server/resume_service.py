@@ -1,20 +1,15 @@
 '):
-                text = text[7:]
-            if text.endswith('```'):
-                text = text[:-3]
+                response_text = response_text[7:]
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
 
-            result = json.loads(text)
+            # Parse and validate JSON
+            result = json.loads(response_text)
 
-            # Validate and normalize the response
-            if not isinstance(result.get("score"), (int, float)):
-                result["score"] = 50
-            result["score"] = max(0, min(100, int(result["score"])))
-
-            if not isinstance(result.get("content"), str):
-                result["content"] = "Content analysis not available"
-
-            if not isinstance(result.get("suggestions"), list):
-                result["suggestions"] = []
+            # Normalize the response
+            result["score"] = max(0, min(100, int(float(result.get("score", 50)))))
+            result["content"] = str(result.get("content", "Content analysis not available"))
+            result["suggestions"] = result.get("suggestions", [])
 
             # Ensure exactly 3 suggestions
             while len(result["suggestions"]) < 3:
@@ -45,11 +40,8 @@ def analyze_resume(file_bytes: bytes) -> Dict[str, Any]:
 
         overall_score = sum(section["score"] for section in section_results) // len(section_results) if section_results else 0
 
-        # Generate overview
-        overview_prompt = f"""Analyze this resume text and provide a professional evaluation.
-Resume text: {text}
-
-Return ONLY a JSON object in this exact format:
+        overview_prompt = f"""Analyze this resume and provide a brief evaluation.
+Respond ONLY with a JSON object in this format, no other text:
 {{
     "overview": "<brief professional evaluation>",
     "strengths": [
@@ -62,7 +54,9 @@ Return ONLY a JSON object in this exact format:
         "<weakness 2>",
         "<weakness 3>"
     ]
-}}"""
+}}
+
+Resume text: {text}"""
 
         overview_response = model.generate_content(overview_prompt)
         overview_text = overview_response.text.strip()
