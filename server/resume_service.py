@@ -26,9 +26,8 @@ try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     model = genai.GenerativeModel('gemini-2.0-flash-lite-preview-02-05')
     model.generation_config = genai.types.GenerationConfig(
-        temperature=0.2,  # Lower temperature for more consistent JSON
+        temperature=0.2,
         candidate_count=1,
-        stop_sequences=["}"],  # Stop at the end of JSON
         top_p=0.8,
         top_k=40,
     )
@@ -60,60 +59,75 @@ def extract_json_response(text: str) -> Dict[str, Any]:
         start = text.find('{')
         end = text.rfind('}') + 1
         if start >= 0 and end > start:
-            json_str = text[start:end]
-            return json.loads(json_str)
+            try:
+                return json.loads(text[start:end])
+            except:
+                # If that fails, try to clean up common issues
+                cleaned_text = text[start:end].replace('\n', ' ').strip()
+                return json.loads(cleaned_text)
         raise ValueError("No valid JSON found in response")
-    except json.JSONDecodeError as e:
+    except Exception as e:
         log_error(f"JSON parsing error: {str(e)}\nResponse text: {text}")
         raise ValueError("Failed to parse JSON from response")
 
-def analyze_section(text: str, section_name: str) -> dict:
-    """Analyze a specific section of the resume"""
-    prompt = f"""You are a resume analysis expert. Analyze the following resume section and provide feedback.
-Section: {section_name}
+def analyze_section(text: str, section_name: str, max_retries: int = 3) -> dict:
+    """Analyze a specific section of the resume with retry logic"""
+    prompt = f"""You are a resume analysis expert. Your task is to analyze this {section_name} section and provide structured feedback.
 
-Text to analyze:
+Resume Text:
 {text}
 
-Respond ONLY with a JSON object in this exact format, and nothing else:
+Respond ONLY with a valid JSON object using this exact format. Do not include any other text or explanation:
+
 {{
-    "score": <number between 0 and 100>,
-    "content": "<2-3 sentence evaluation>",
+    "score": <number 0-100>,
+    "content": "<clear 2-3 sentence evaluation>",
     "suggestions": [
-        "<specific improvement 1>",
-        "<specific improvement 2>",
-        "<specific improvement 3>"
+        "<specific improvement suggestion 1>",
+        "<specific improvement suggestion 2>",
+        "<specific improvement suggestion 3>"
     ]
 }}"""
 
-    try:
-        response = model.generate_content(prompt)
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini")
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            if not response.text:
+                raise ValueError("Empty response from model")
 
-        result = extract_json_response(response.text)
+            result = extract_json_response(response.text)
 
-        # Validate and clean up the response
-        if not isinstance(result.get("score"), (int, float)) or not (0 <= result["score"] <= 100):
-            result["score"] = 50  # Default score if invalid
+            # Validate and clean up the response
+            if not isinstance(result.get("score"), (int, float)) or not (0 <= result["score"] <= 100):
+                result["score"] = 50
 
-        if not isinstance(result.get("content"), str):
-            result["content"] = "Content analysis not available"
+            if not isinstance(result.get("content"), str):
+                result["content"] = "Content analysis not available"
 
-        if not isinstance(result.get("suggestions"), list):
-            result["suggestions"] = ["No specific suggestions provided"]
+            if not isinstance(result.get("suggestions"), list):
+                result["suggestions"] = ["No specific suggestions provided"]
 
-        # Convert score to integer
-        result["score"] = int(result["score"])
+            # Ensure we have exactly 3 suggestions
+            while len(result["suggestions"]) < 3:
+                result["suggestions"].append("Consider reviewing this section for improvements")
 
-        return result
-    except Exception as e:
-        log_error(f"Error analyzing section {section_name}: {str(e)}")
-        return {
-            "score": 0,
-            "content": f"Analysis failed: {str(e)}",
-            "suggestions": ["Could not analyze this section"]
-        }
+            # Convert score to integer
+            result["score"] = int(result["score"])
+
+            return result
+        except Exception as e:
+            if attempt == max_retries - 1:
+                log_error(f"Failed to analyze section {section_name} after {max_retries} attempts: {str(e)}")
+                return {
+                    "score": 50,
+                    "content": "Unable to analyze this section",
+                    "suggestions": [
+                        "Please review this section manually",
+                        "Consider having a professional review your resume",
+                        "Ensure all information is clearly presented"
+                    ]
+                }
+            time.sleep(1)  # Wait before retry
 
 def analyze_resume(file_bytes: bytes) -> Dict[str, Any]:
     """Process and analyze a resume"""
@@ -130,30 +144,30 @@ def analyze_resume(file_bytes: bytes) -> Dict[str, Any]:
         for section in sections:
             result = analyze_section(text, section)
             section_results.append({"name": section, **result})
-            # Small delay between requests to avoid rate limiting
-            time.sleep(0.5)
+            time.sleep(1)  # Delay between sections
 
         # Calculate overall score
         overall_score = sum(section["score"] for section in section_results) // len(section_results) if section_results else 0
 
         # Generate overview
-        overview_prompt = f"""You are a resume analysis expert. Analyze this resume and provide an overview.
+        overview_prompt = f"""You are a resume analysis expert. Generate a professional overview of this resume.
 
-Resume text:
+Resume Text:
 {text}
 
-Respond ONLY with a JSON object in this exact format, and nothing else:
+Respond ONLY with a valid JSON object using this exact format. Do not include any other text:
+
 {{
-    "overview": "<2-3 sentence professional evaluation>",
+    "overview": "<clear 2-3 sentence professional evaluation>",
     "strengths": [
         "<key strength 1>",
         "<key strength 2>",
         "<key strength 3>"
     ],
     "weaknesses": [
-        "<area for improvement 1>",
-        "<area for improvement 2>",
-        "<area for improvement 3>"
+        "<improvement area 1>",
+        "<improvement area 2>",
+        "<improvement area 3>"
     ]
 }}"""
 
