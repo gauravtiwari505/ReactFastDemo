@@ -24,6 +24,7 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
     ]);
 
     let resultData = "";
+    let errorData = "";
 
     pythonProcess.stdout.on("data", (data) => {
       resultData += data.toString();
@@ -31,18 +32,23 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
     pythonProcess.stderr.on("data", (data) => {
       console.error(`Python Error: ${data}`);
+      errorData += data.toString();
     });
 
     pythonProcess.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}`));
+        reject(new Error(errorData || `Python process exited with code ${code}`));
         return;
       }
       try {
         const results = JSON.parse(resultData);
+        if (results.error) {
+          reject(new Error(results.message || results.error));
+          return;
+        }
         resolve(results);
       } catch (err) {
-        reject(new Error("Failed to parse Python output"));
+        reject(new Error(`Failed to parse Python output: ${resultData}`));
       }
     });
 
@@ -120,6 +126,7 @@ async function generateAndSendReport(analysis: any): Promise<void> {
 }
 
 export function registerRoutes(app: Express): Server {
+  // Initial analysis endpoint without email
   app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ message: "No PDF file provided" });
@@ -129,8 +136,7 @@ export function registerRoutes(app: Express): Server {
       const analysis = await storage.createAnalysis({
         fileName: req.file.originalname,
         uploadedAt: new Date().toISOString(),
-        status: "processing",
-        emailTo: req.body.email // Optional email address
+        status: "processing"
       });
 
       // Process the PDF using our Python service
@@ -160,23 +166,39 @@ export function registerRoutes(app: Express): Server {
         }
       }
 
-      // Send email if email address was provided
-      if (req.body.email) {
-        try {
-          await generateAndSendReport(updatedAnalysis);
-          await storage.updateAnalysis(analysis.id, {
-            emailSentAt: new Date().toISOString()
-          });
-        } catch (error) {
-          console.error("Failed to send email:", error);
-          // Don't fail the request if email sending fails
-        }
-      }
-
       res.json(updatedAnalysis);
     } catch (error) {
       console.error("Analysis error:", error);
-      res.status(500).json({ message: "Failed to analyze resume" });
+      res.status(500).json({ message: error.message || "Failed to analyze resume" });
+    }
+  });
+
+  // New endpoint for sending email report
+  app.post("/api/analysis/:id/send-report", async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email address is required" });
+    }
+
+    try {
+      const analysis = await storage.getAnalysis(Number(req.params.id));
+      if (!analysis) {
+        return res.status(404).json({ message: "Analysis not found" });
+      }
+
+      await generateAndSendReport(analysis);
+
+      // Update analysis with email information
+      await storage.updateAnalysis(analysis.id, {
+        emailTo: email,
+        emailSentAt: new Date().toISOString()
+      });
+
+      res.json({ message: "Report sent successfully" });
+    } catch (error) {
+      console.error("Failed to send report:", error);
+      res.status(500).json({ message: "Failed to send report" });
     }
   });
 
