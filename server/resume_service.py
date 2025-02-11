@@ -1,31 +1,30 @@
 '):
-                response_text = response_text[7:]
-            if response_text.endswith('```'):
-                response_text = response_text[:-3]
+                text = text[7:]
+            if text.endswith('```'):
+                text = text[:-3]
 
-            # Parse the JSON
-            result = json.loads(response_text)
+            result = json.loads(text)
 
-            # Validate the response structure
+            # Validate and normalize the response
             if not isinstance(result.get("score"), (int, float)):
                 result["score"] = 50
+            result["score"] = max(0, min(100, int(result["score"])))
+
             if not isinstance(result.get("content"), str):
                 result["content"] = "Content analysis not available"
+
             if not isinstance(result.get("suggestions"), list):
                 result["suggestions"] = []
 
-            # Ensure score is in valid range
-            result["score"] = max(0, min(100, int(result["score"])))
-
             # Ensure exactly 3 suggestions
             while len(result["suggestions"]) < 3:
-                result["suggestions"].append("Review this section for potential improvements")
+                result["suggestions"].append("Review this section for improvements")
             result["suggestions"] = result["suggestions"][:3]
 
             return result
 
         except Exception as e:
-            log_error(f"Attempt {attempt + 1} failed: {str(e)}")
+            log_error(f"Analysis attempt {attempt + 1} failed: {str(e)}")
             if attempt == max_retries - 1:
                 return get_default_section_result()
             time.sleep(1)  # Wait before retry
@@ -46,23 +45,24 @@ def analyze_resume(file_bytes: bytes) -> Dict[str, Any]:
 
         overall_score = sum(section["score"] for section in section_results) // len(section_results) if section_results else 0
 
-        # Generate overview with simpler prompt
-        overview_prompt = f"""Provide a resume overview in this exact JSON format only:
+        # Generate overview
+        overview_prompt = f"""Analyze this resume text and provide a professional evaluation.
+Resume text: {text}
+
+Return ONLY a JSON object in this exact format:
 {{
-    "overview": [2-3 sentence evaluation],
+    "overview": "<brief professional evaluation>",
     "strengths": [
-        [key strength 1],
-        [key strength 2],
-        [key strength 3]
+        "<strength 1>",
+        "<strength 2>",
+        "<strength 3>"
     ],
     "weaknesses": [
-        [improvement area 1],
-        [improvement area 2],
-        [improvement area 3]
+        "<weakness 1>",
+        "<weakness 2>",
+        "<weakness 3>"
     ]
-}}
-
-Resume text: {text}"""
+}}"""
 
         overview_response = model.generate_content(overview_prompt)
         overview_text = overview_response.text.strip()
