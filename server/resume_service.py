@@ -274,22 +274,22 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
 @handle_api_call
 def generate_overview(text: str) -> dict:
     """Generate an overview analysis of the entire resume using Gemini."""
-    prompt = """Analyze this resume and provide a comprehensive evaluation.
+    formatted_prompt = f"""Analyze this resume and provide a comprehensive evaluation.
     Focus on specific, actionable insights for improving the resume.
     Consider format, content quality, and professional impact.
 
     Important: Respond with ONLY a JSON object that has exactly these keys:
-    {
+    {{
         "overview": <string with 2-3 sentence professional overview>,
         "strengths": [<array of 3 specific resume strengths>],
         "weaknesses": [<array of 3 specific areas for improvement>]
-    }
+    }}
 
     Resume text:
     {text}"""
 
     try:
-        response = model.generate_content(prompt.format(text=text))
+        response = model.generate_content(formatted_prompt)
         result = extract_json_response(response.text)
         validate_overview_result(result)
         return result
