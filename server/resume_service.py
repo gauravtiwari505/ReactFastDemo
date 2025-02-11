@@ -8,6 +8,14 @@ from pdfminer.high_level import extract_text
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 
+def log_info(msg: str):
+    """Log information to stderr"""
+    print(msg, file=sys.stderr, flush=True)
+
+def log_error(msg: str):
+    """Log errors to stderr"""
+    print(f"Error: {msg}", file=sys.stderr, flush=True)
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from PDF."""
     try:
@@ -16,12 +24,12 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             raise ValueError("No text content extracted from PDF")
         return text
     except Exception as e:
-        print(f"PDF extraction error: {str(e)}", file=sys.stderr)
+        log_error(f"PDF extraction error: {str(e)}")
         raise ValueError(f"Failed to extract text from PDF: {str(e)}")
 
 def analyze_resume(file_bytes: bytes, filename: str) -> dict:
     """Process and analyze a resume."""
-    print("Starting resume analysis...", file=sys.stderr)
+    log_info("Starting resume analysis...")
 
     # Save uploaded file
     temp_file_path = os.path.join(TMP_DIR, filename)
@@ -31,7 +39,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> dict:
     try:
         # Extract text from PDF
         full_text = extract_text_from_pdf(temp_file_path)
-        print(f"Successfully extracted {len(full_text)} characters of text", file=sys.stderr)
+        log_info(f"Successfully extracted {len(full_text)} characters of text")
 
         # Mock analysis for now - we'll enhance this later
         mock_sections = [
@@ -65,11 +73,11 @@ def analyze_resume(file_bytes: bytes, filename: str) -> dict:
             "overallScore": 88
         }
 
-        print("Analysis complete", file=sys.stderr)
+        log_info("Analysis complete")
         return results
 
     except Exception as e:
-        print(f"Error during analysis: {str(e)}", file=sys.stderr)
+        log_error(f"Error during analysis: {str(e)}")
         raise
     finally:
         # Cleanup
@@ -79,16 +87,23 @@ def analyze_resume(file_bytes: bytes, filename: str) -> dict:
 if __name__ == "__main__":
     try:
         # Read input from Node.js
-        input_data = json.loads(sys.stdin.read())
+        input_raw = sys.stdin.read()
+        if not input_raw:
+            raise ValueError("No input received")
+
+        input_data = json.loads(input_raw)
         file_bytes = base64.b64decode(input_data["file_bytes"])
         filename = input_data["filename"]
-        print(f"Received file: {filename}", file=sys.stderr)
+        log_info(f"Received file: {filename}")
 
         # Analyze the resume
         results = analyze_resume(file_bytes, filename)
-        print(json.dumps(results))  # Send results back to Node.js
-        sys.exit(0)
+        # Ensure only one JSON output on stdout
+        sys.stderr.flush()
+        print(json.dumps(results), flush=True)
     except Exception as e:
-        print(f"Error during analysis: {str(e)}", file=sys.stderr)
-        print(json.dumps({"error": str(e)}))
+        log_error(f"Error during analysis: {str(e)}")
+        # Ensure error response is valid JSON
+        error_response = {"error": True, "message": str(e)}
+        print(json.dumps(error_response), flush=True)
         sys.exit(1)
