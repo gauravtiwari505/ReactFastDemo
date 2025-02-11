@@ -92,6 +92,16 @@ export function registerRoutes(app: Express): Server {
     res.json(analysis);
   });
 
+  app.get("/api/analytics", async (_req, res) => {
+    try {
+      const analytics = await storage.getAnalytics();
+      res.json(analytics);
+    } catch (error) {
+      console.error("Analytics error:", error);
+      res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
