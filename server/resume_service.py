@@ -19,41 +19,62 @@ def log_error(error_msg: str, include_trace: bool = True):
         error_output += f"\nStack trace:\n{traceback.format_exc()}"
     print(error_output, file=sys.stderr)
 
+def log_info(msg: str):
+    """Helper function for logging informational messages"""
+    print(msg, file=sys.stderr)
+
 # Initialize Gemini with proper error handling
 try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     model = genai.GenerativeModel('gemini-1.5-pro')
-    print("Successfully initialized Gemini model", file=sys.stderr)
+    log_info("Successfully initialized Gemini model")
 except Exception as e:
     log_error(f"Failed to initialize Gemini: {str(e)}")
     raise
 
 def handle_api_call(func):
-    """Decorator to handle API calls with retries and rate limiting"""
+    """Decorator to handle API calls with retries and exponential backoff"""
     def wrapper(*args, **kwargs):
-        max_retries = 3
-        retry_delay = 2  # seconds
+        max_retries = 4  # Allow up to 16 seconds (2^4)
+        retry_delay = 2  # Initial delay of 2 seconds
+        last_error = None
 
         for attempt in range(max_retries):
             try:
-                print(f"Attempting {func.__name__} (attempt {attempt + 1}/{max_retries})", file=sys.stderr)
+                log_info(f"Attempting {func.__name__} (attempt {attempt + 1}/{max_retries})")
                 return func(*args, **kwargs)
             except Exception as e:
+                last_error = e
                 if "429" in str(e) and attempt < max_retries - 1:
-                    print(f"Rate limit hit for {func.__name__}, waiting {retry_delay} seconds...", file=sys.stderr)
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 2, 4, 8, 16 seconds
+                    log_info(f"Rate limit hit for {func.__name__}, waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
                     continue
-                log_error(f"Error in {func.__name__}: {str(e)}")
-                if attempt == max_retries - 1:
-                    raise
+                else:
+                    log_error(f"Error in {func.__name__}: {str(e)}")
+                    break
+
+        # If we get here, all retries failed
+        if last_error:
+            if "429" in str(last_error):
+                return {
+                    "score": 0,
+                    "suggestions": ["Section analysis failed due to rate limiting. Please try again later."],
+                    "content": "Rate limit exceeded"
+                }
+            else:
+                return {
+                    "score": 0,
+                    "suggestions": [f"Section analysis failed: {str(last_error)}"],
+                    "content": "Analysis failed"
+                }
         return func(*args, **kwargs)
     return wrapper
 
 @handle_api_call
 def analyze_resume_section(text: str, section_name: str) -> dict:
     """Analyze a specific section of the resume using Gemini with proper error handling."""
-    print(f"Starting analysis of section: {section_name}", file=sys.stderr)
+    log_info(f"Starting analysis of section: {section_name}")
 
     prompts = {
         "Contact Information": """Extract and evaluate the contact information. Output a dictionary with the following keys:
@@ -132,19 +153,19 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
     }}"""
 
     try:
-        print(f"Sending request to Gemini for section: {section_name}", file=sys.stderr)
+        log_info(f"Sending request to Gemini for section: {section_name}")
         response = model.generate_content(prompt)
 
         if not response or not response.text:
             raise ValueError("Empty response from Gemini")
 
-        print(f"Received response for section: {section_name}", file=sys.stderr)
-        print(f"Raw response: {response.text[:200]}...", file=sys.stderr)  # Log first 200 chars
+        log_info(f"Received response for section: {section_name}")
+        log_info(f"Raw response preview: {response.text[:200]}...")  # Log first 200 chars
 
         try:
             result = json.loads(response.text)
         except json.JSONDecodeError as e:
-            print(f"Failed to parse JSON directly, attempting extraction for section: {section_name}", file=sys.stderr)
+            log_info(f"Failed to parse JSON directly, attempting extraction for section: {section_name}")
             # If direct parsing fails, try to extract JSON
             text = response.text
             start = text.find('{')
@@ -160,15 +181,11 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
         if missing_fields:
             raise ValueError(f"Missing required fields in response: {missing_fields}")
 
-        print(f"Successfully analyzed section: {section_name}", file=sys.stderr)
+        log_info(f"Successfully analyzed section: {section_name}")
         return result
     except Exception as e:
         log_error(f"Error analyzing section {section_name}: {str(e)}")
-        return {
-            "score": 0,
-            "suggestions": [f"Unable to analyze this section: {str(e)}"],
-            "content": "Analysis failed due to an error"
-        }
+        raise  # Re-raise to let the decorator handle the retry logic
 
 @handle_api_call
 def generate_overview(text: str) -> dict:
@@ -193,7 +210,7 @@ def generate_overview(text: str) -> dict:
         validate_overview_result(result)
         return result
     except Exception as e:
-        print(f"Error generating overview: {str(e)}", file=sys.stderr)
+        log_error(f"Error generating overview: {str(e)}")
         return {
             "overview": f"Analysis failed: {str(e)}",
             "strengths": ["Not available due to error"],
@@ -219,24 +236,24 @@ def validate_overview_result(result: Dict[str, Any]):
 
 def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
-    print("Starting resume analysis...", file=sys.stderr)
+    log_info("Starting resume analysis...")
 
     temp_file_path = save_uploaded_file(file_bytes, filename)
-    print(f"Saved file to {temp_file_path}", file=sys.stderr)
+    log_info(f"Saved file to {temp_file_path}")
 
     try:
         # Load and split document
         loader = PDFMinerLoader(file_path=temp_file_path)
         documents = loader.load()
-        print(f"Loaded {len(documents)} document(s)", file=sys.stderr)
+        log_info(f"Loaded {len(documents)} document(s)")
 
         # Extract text content
         full_text = " ".join([doc.page_content for doc in documents])
-        print(f"Extracted {len(full_text)} characters of text", file=sys.stderr)
+        log_info(f"Extracted {len(full_text)} characters of text")
 
         # Generate overall analysis with rate limiting
         overview_analysis = generate_overview(full_text)
-        print("Generated overview analysis", file=sys.stderr)
+        log_info("Generated overview analysis")
 
         # Define sections to analyze
         sections = [
@@ -253,7 +270,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Analyze each section with proper rate limiting
         section_results = []
         for section in sections:
-            print(f"Analyzing section: {section}", file=sys.stderr)
+            log_info(f"Analyzing section: {section}")
             section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
@@ -270,11 +287,11 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             "overallScore": round(overall_score)
         }
 
-        print(f"Analysis complete: {json.dumps(results)}", file=sys.stderr)
+        log_info(f"Analysis complete: {json.dumps(results)}")
         return results
 
     except Exception as e:
-        print(f"Error during analysis: {str(e)}", file=sys.stderr)
+        log_error(f"Error during analysis: {str(e)}")
         raise
     finally:
         # Cleanup
@@ -294,13 +311,13 @@ if __name__ == "__main__":
         input_data = json.loads(sys.stdin.read())
         file_bytes = base64.b64decode(input_data["file_bytes"])
         filename = input_data["filename"]
-        print(f"Received file: {filename}", file=sys.stderr)
+        log_info(f"Received file: {filename}")
 
         # Analyze the resume
         results = analyze_resume(file_bytes, filename)
         print(json.dumps(results))  # Send results back to Node.js
         sys.exit(0)
     except Exception as e:
-        print(f"Error during analysis: {str(e)}", file=sys.stderr)
+        log_error(f"Error during analysis: {str(e)}")
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
