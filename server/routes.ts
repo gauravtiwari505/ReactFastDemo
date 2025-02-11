@@ -46,11 +46,75 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
       }
     });
 
-    // Send the PDF data to Python process
     pythonProcess.stdin.write(JSON.stringify({
       file_bytes: fileBuffer.toString("base64"),
       filename: filename
     }));
+    pythonProcess.stdin.end();
+  });
+}
+
+async function checkAccessibility(fileBuffer: Buffer): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const pythonProcess = spawn("python", [
+      "server/pdf_accessibility.py",
+    ]);
+
+    let resultData = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      resultData += data.toString();
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      console.error(`Python Error: ${data}`);
+    });
+
+    pythonProcess.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python process exited with code ${code}`));
+        return;
+      }
+      try {
+        const results = JSON.parse(resultData);
+        resolve(results);
+      } catch (err) {
+        reject(new Error("Failed to parse Python output"));
+      }
+    });
+
+    pythonProcess.stdin.write(JSON.stringify({
+      file_bytes: fileBuffer.toString("base64")
+    }));
+    pythonProcess.stdin.end();
+  });
+}
+
+async function generateAndSendReport(analysis: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const pythonProcess = spawn("python", [
+      "server/report_service.py",
+    ]);
+
+    let resultData = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      resultData += data.toString();
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      console.error(`Python Error: ${data}`);
+    });
+
+    pythonProcess.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python process exited with code ${code}`));
+        return;
+      }
+      resolve();
+    });
+
+    pythonProcess.stdin.write(JSON.stringify(analysis));
     pythonProcess.stdin.end();
   });
 }
@@ -65,11 +129,16 @@ export function registerRoutes(app: Express): Server {
       const analysis = await storage.createAnalysis({
         fileName: req.file.originalname,
         uploadedAt: new Date().toISOString(),
-        status: "processing"
+        status: "processing",
+        emailTo: req.body.email // Optional email address
       });
 
       // Process the PDF using our Python service
       const results = await analyzePDF(req.file.buffer, req.file.originalname);
+
+      // Check accessibility
+      const accessibilityResults = await checkAccessibility(req.file.buffer);
+      results.accessibility = accessibilityResults;
 
       // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
@@ -88,6 +157,19 @@ export function registerRoutes(app: Express): Server {
             suggestions: section.suggestions,
             timestamp: new Date().toISOString()
           });
+        }
+      }
+
+      // Send email if email address was provided
+      if (req.body.email) {
+        try {
+          await generateAndSendReport(updatedAnalysis);
+          await storage.updateAnalysis(analysis.id, {
+            emailSentAt: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error("Failed to send email:", error);
+          // Don't fail the request if email sending fails
         }
       }
 
