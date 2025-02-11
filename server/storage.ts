@@ -1,4 +1,4 @@
-import { resumeAnalyses, resumeScores, type Analysis, type InsertAnalysis, type Score } from "@shared/schema";
+import { resumeAnalyses, resumeScores, type Analysis, type InsertAnalysis, type Score, type InsertScore } from "@shared/schema";
 import { db } from "./db";
 import { eq, avg, count } from "drizzle-orm";
 
@@ -6,6 +6,7 @@ export interface IStorage {
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
   getAnalysis(id: number): Promise<Analysis | undefined>;
   updateAnalysis(id: number, analysis: Partial<Analysis>): Promise<Analysis>;
+  createScore(score: InsertScore): Promise<Score>;
   getAnalytics(): Promise<{
     totalResumes: number;
     averageScore: number;
@@ -46,6 +47,14 @@ export class DatabaseStorage implements IStorage {
     }
 
     return analysis;
+  }
+
+  async createScore(insertScore: InsertScore): Promise<Score> {
+    const [score] = await db
+      .insert(resumeScores)
+      .values(insertScore)
+      .returning();
+    return score;
   }
 
   async getAnalytics() {

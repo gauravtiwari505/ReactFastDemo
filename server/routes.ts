@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
-import { insertAnalysisSchema } from "@shared/schema";
+import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
 
@@ -72,12 +72,26 @@ export function registerRoutes(app: Express): Server {
       const results = await analyzePDF(req.file.buffer, req.file.originalname);
 
       // Update analysis with results
-      await storage.updateAnalysis(analysis.id, {
+      const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
         results: results
       });
 
-      res.json(analysis);
+      // Store section scores
+      if (results.sections) {
+        for (const section of results.sections) {
+          await storage.createScore({
+            analysisId: analysis.id,
+            sectionName: section.name,
+            score: section.score,
+            feedback: section.content,
+            suggestions: section.suggestions,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+
+      res.json(updatedAnalysis);
     } catch (error) {
       console.error("Analysis error:", error);
       res.status(500).json({ message: "Failed to analyze resume" });
