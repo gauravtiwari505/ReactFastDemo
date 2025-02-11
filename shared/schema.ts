@@ -1,4 +1,4 @@
-import { pgTable, text, serial, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, json, integer, foreignKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -21,11 +21,29 @@ export const resumeAnalyses = pgTable("resume_analyses", {
   }>(),
 });
 
+export const resumeScores = pgTable("resume_scores", {
+  id: serial("id").primaryKey(),
+  analysisId: integer("analysis_id").references(() => resumeAnalyses.id).notNull(),
+  sectionName: text("section_name").notNull(),
+  score: integer("score").notNull(),
+  feedback: text("feedback").notNull(),
+  suggestions: json("suggestions").$type<string[]>(),
+  timestamp: text("timestamp").notNull(),
+});
+
+// Schema for inserting new analysis
 export const insertAnalysisSchema = createInsertSchema(resumeAnalyses).pick({
   fileName: true,
   uploadedAt: true,
   status: true,
 });
 
+// Schema for inserting new scores
+export const insertScoreSchema = createInsertSchema(resumeScores).omit({
+  id: true,
+});
+
 export type InsertAnalysis = z.infer<typeof insertAnalysisSchema>;
 export type Analysis = typeof resumeAnalyses.$inferSelect;
+export type InsertScore = z.infer<typeof insertScoreSchema>;
+export type Score = typeof resumeScores.$inferSelect;
