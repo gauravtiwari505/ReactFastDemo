@@ -21,7 +21,7 @@ def save_uploaded_file(file_bytes, filename):
         temp_file.write(file_bytes)
     return temp_file_path
 
-async def analyze_resume_section(text: str, section_name: str) -> dict:
+def analyze_resume_section(text: str, section_name: str) -> dict:
     """Analyze a specific section of the resume using Gemini."""
     prompt = f"""Analyze the following resume {section_name} section and provide:
     1. A score out of 100
@@ -39,10 +39,19 @@ async def analyze_resume_section(text: str, section_name: str) -> dict:
     }}
     """
 
-    response = await model.generate_content(prompt)
-    return json.loads(response.text)
+    try:
+        response = model.generate_content(prompt)
+        # Parse the response text as JSON
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Error analyzing section {section_name}: {str(e)}", file=sys.stderr)
+        return {
+            "score": 0,
+            "suggestions": ["Unable to analyze this section"],
+            "content": "Analysis failed"
+        }
 
-async def generate_overview(text: str) -> dict:
+def generate_overview(text: str) -> dict:
     """Generate an overview analysis of the entire resume using Gemini."""
     prompt = f"""Analyze this resume and provide:
     1. A brief professional overview
@@ -60,10 +69,18 @@ async def generate_overview(text: str) -> dict:
     }}
     """
 
-    response = await model.generate_content(prompt)
-    return json.loads(response.text)
+    try:
+        response = model.generate_content(prompt)
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Error generating overview: {str(e)}", file=sys.stderr)
+        return {
+            "overview": "Unable to generate overview",
+            "strengths": ["Not available"],
+            "weaknesses": ["Not available"]
+        }
 
-async def analyze_resume(file_bytes, filename):
+def analyze_resume(file_bytes, filename):
     """Process and analyze a resume using PDFMiner and Gemini."""
     print("Starting resume analysis...", file=sys.stderr)
 
@@ -82,7 +99,8 @@ async def analyze_resume(file_bytes, filename):
         print(f"Extracted {len(full_text)} characters of text", file=sys.stderr)
 
         # Generate overall analysis
-        overview_analysis = await generate_overview(full_text)
+        overview_analysis = generate_overview(full_text)
+        print("Generated overview analysis", file=sys.stderr)
 
         # Define sections to analyze
         sections = [
@@ -99,7 +117,8 @@ async def analyze_resume(file_bytes, filename):
         # Analyze each section
         section_results = []
         for section in sections:
-            section_analysis = await analyze_resume_section(full_text, section)
+            print(f"Analyzing section: {section}", file=sys.stderr)
+            section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
                 **section_analysis
@@ -111,12 +130,15 @@ async def analyze_resume(file_bytes, filename):
         results = {
             **overview_analysis,
             "sections": section_results,
-            "overallScore": overall_score
+            "overallScore": round(overall_score)
         }
 
         print(f"Analysis complete: {json.dumps(results)}", file=sys.stderr)
         return results
 
+    except Exception as e:
+        print(f"Error during analysis: {str(e)}", file=sys.stderr)
+        raise
     finally:
         # Cleanup
         if os.path.exists(temp_file_path):
@@ -131,8 +153,7 @@ if __name__ == "__main__":
         print(f"Received file: {filename}", file=sys.stderr)
 
         # Analyze the resume
-        import asyncio
-        results = asyncio.run(analyze_resume(file_bytes, filename))
+        results = analyze_resume(file_bytes, filename)
         print(json.dumps(results))  # Send results back to Node.js
         sys.exit(0)
     except Exception as e:
