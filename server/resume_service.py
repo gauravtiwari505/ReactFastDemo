@@ -24,7 +24,7 @@ def log_info(msg: str):
 # Initialize Gemini with proper error handling
 try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-    model = genai.GenerativeModel('gemini-1.5-flash-preview')
+    model = genai.GenerativeModel('gemini-2.0-flash-lite-preview-02-05')
     log_info("Successfully initialized Gemini model")
 except Exception as e:
     log_error(f"Failed to initialize Gemini: {str(e)}")
