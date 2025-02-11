@@ -1,5 +1,12 @@
 import google.generativeai as genai
 from pdfminer.high_level import extract_text
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+from pdfminer.layout import LAParams
+from pdfminer.converter import TextConverter
+from io import StringIO
 import os
 import sys
 import json
@@ -12,6 +19,41 @@ from datetime import datetime, timedelta
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
+
+def extract_text_from_pdf(pdf_path: str) -> str:
+    """Extract text from PDF with robust error handling"""
+    output_string = StringIO()
+
+    try:
+        # Set up PDF parsing tools
+        rsrcmgr = PDFResourceManager()
+        device = TextConverter(rsrcmgr, output_string, laparams=LAParams())
+        interpreter = PDFPageInterpreter(rsrcmgr, device)
+
+        # Open and process PDF file
+        with open(pdf_path, 'rb') as file:
+            # Create parser and document objects
+            parser = PDFParser(file)
+            doc = PDFDocument(parser)
+
+            # Process each page
+            for page in PDFPage.create_pages(doc):
+                interpreter.process_page(page)
+
+        # Get text content
+        text = output_string.getvalue()
+
+        if not text.strip():
+            raise ValueError("No text content extracted from PDF")
+
+        return text
+
+    except Exception as e:
+        log_error(f"PDF extraction error: {str(e)}")
+        raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+    finally:
+        output_string.close()
+        device.close()
 
 def log_error(error_msg: str, include_trace: bool = True):
     """Helper function to log errors with optional stack trace"""
@@ -273,12 +315,10 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     log_info(f"Saved file to {temp_file_path}")
 
     try:
-        # Extract text from PDF using pdfminer.six directly
+        # Extract text from PDF using our enhanced extraction method
         try:
-            full_text = extract_text(temp_file_path)
-            if not full_text or len(full_text.strip()) == 0:
-                raise ValueError("No text content extracted from PDF")
-            log_info(f"Extracted {len(full_text)} characters of text")
+            full_text = extract_text_from_pdf(temp_file_path)
+            log_info(f"Successfully extracted {len(full_text)} characters of text")
         except Exception as e:
             log_error(f"Failed to extract text from PDF: {str(e)}")
             raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
@@ -308,7 +348,6 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 "name": section,
                 **section_analysis
             })
-            # Rate limiter will handle delays between requests
 
         # Calculate overall score
         overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
