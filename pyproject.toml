@@ -14,5 +14,6 @@ dependencies = [
     "pdfplumber>=0.5.3",
     "python-multipart>=0.0.20",
     "reportlab>=4.3.0",
+    "six>=1.17.0",
     "tiktoken>=0.8.0",
 ]
