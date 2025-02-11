@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import AnalysisSection from "@/components/analysis-section";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { ArrowLeft, Loader2, ChevronRight } from "lucide-react";
 import type { Analysis } from "@shared/schema";
-import AnimatedScore from "@/components/animated-score";
 import { m as motion } from "framer-motion";
+import GaugeChart from "@/components/gauge-chart";
+import RadarScoreChart from "@/components/radar-score-chart";
 
 export default function Analysis() {
   const { id } = useParams();
@@ -128,18 +129,34 @@ export default function Analysis() {
               </Card>
             </motion.div>
 
-            {/* Overall Score */}
+            {/* Score Overview */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
+              className="grid md:grid-cols-2 gap-6 mb-6"
             >
-              <Card className="mb-6">
-                <CardContent className="pt-6">
-                  <AnimatedScore
-                    label="Overall Score"
-                    score={analysis.results?.overallScore || 0}
-                    delay={0}
+              {/* Overall Score Gauge */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Overall Score</CardTitle>
+                </CardHeader>
+                <CardContent className="flex justify-center">
+                  <GaugeChart score={analysis.results?.overallScore || 0} />
+                </CardContent>
+              </Card>
+
+              {/* Section Scores Radar */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Section Scores</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RadarScoreChart 
+                    data={analysis.results?.sections.map(section => ({
+                      name: section.name,
+                      score: section.score
+                    })) || []}
                   />
                 </CardContent>
               </Card>
