@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 import traceback
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
@@ -23,6 +24,47 @@ def log_info(msg: str):
     """Helper function for logging informational messages"""
     print(msg, file=sys.stderr)
 
+class RateLimiter:
+    """Implements a token bucket rate limiter with request tracking"""
+    def __init__(self, requests_per_minute=60):
+        self.requests_per_minute = requests_per_minute
+        self.bucket = requests_per_minute
+        self.last_refill = datetime.now()
+        self.refill_rate = requests_per_minute / 60.0  # tokens per second
+        self.last_request = datetime.now()
+        self.min_delay = 1.0  # Minimum delay between requests in seconds
+
+    def _refill_bucket(self):
+        now = datetime.now()
+        time_passed = (now - self.last_refill).total_seconds()
+        self.bucket = min(
+            self.requests_per_minute,
+            self.bucket + time_passed * self.refill_rate
+        )
+        self.last_refill = now
+
+    def wait_if_needed(self):
+        """Wait if necessary to comply with rate limits"""
+        # Ensure minimum delay between requests
+        time_since_last = (datetime.now() - self.last_request).total_seconds()
+        if time_since_last < self.min_delay:
+            sleep_time = self.min_delay - time_since_last
+            log_info(f"Rate limiting: Waiting {sleep_time:.2f} seconds...")
+            time.sleep(sleep_time)
+
+        # Check token bucket
+        self._refill_bucket()
+        while self.bucket < 1:
+            log_info("Rate limiting: Waiting for token bucket refill...")
+            time.sleep(0.1)  # Wait for tokens to refill
+            self._refill_bucket()
+
+        self.bucket -= 1
+        self.last_request = datetime.now()
+
+# Initialize rate limiter with conservative limits
+rate_limiter = RateLimiter(requests_per_minute=30)  # Adjust based on API limits
+
 # Initialize Gemini with proper error handling
 try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -36,39 +78,28 @@ def handle_api_call(func):
     """Decorator to handle API calls with retries and exponential backoff"""
     def wrapper(*args, **kwargs):
         max_retries = 4  # Allow up to 16 seconds (2^4)
-        retry_delay = 2  # Initial delay of 2 seconds
-        last_error = None
+        base_delay = 2   # Initial delay of 2 seconds
 
         for attempt in range(max_retries):
             try:
+                # Wait for rate limiter before making request
+                rate_limiter.wait_if_needed()
+
                 log_info(f"Attempting {func.__name__} (attempt {attempt + 1}/{max_retries})")
                 return func(*args, **kwargs)
             except Exception as e:
-                last_error = e
                 if "429" in str(e) and attempt < max_retries - 1:
-                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 2, 4, 8, 16 seconds
-                    log_info(f"Rate limit hit for {func.__name__}, waiting {wait_time} seconds before retry...")
-                    time.sleep(wait_time)
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff: 2, 4, 8, 16 seconds
+                    log_info(f"Rate limit hit for {func.__name__}, waiting {delay} seconds before retry...")
+                    time.sleep(delay)  # This delay is in addition to the rate limiter
                     continue
-                else:
-                    log_error(f"Error in {func.__name__}: {str(e)}")
-                    break
-
-        # If we get here, all retries failed
-        if last_error:
-            if "429" in str(last_error):
+                log_error(f"Error in {func.__name__}: {str(e)}")
                 return {
                     "score": 0,
-                    "suggestions": ["Section analysis failed due to rate limiting. Please try again later."],
-                    "content": "Rate limit exceeded"
-                }
-            else:
-                return {
-                    "score": 0,
-                    "suggestions": [f"Section analysis failed: {str(last_error)}"],
+                    "suggestions": [f"Analysis failed: {str(e)}"],
                     "content": "Analysis failed"
                 }
-        return func(*args, **kwargs)
+        return wrapper
     return wrapper
 
 @handle_api_call
@@ -162,30 +193,30 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
         log_info(f"Received response for section: {section_name}")
         log_info(f"Raw response preview: {response.text[:200]}...")  # Log first 200 chars
 
-        try:
-            result = json.loads(response.text)
-        except json.JSONDecodeError as e:
-            log_info(f"Failed to parse JSON directly, attempting extraction for section: {section_name}")
-            # If direct parsing fails, try to extract JSON
-            text = response.text
-            start = text.find('{')
-            end = text.rfind('}') + 1
-            if start >= 0 and end > start:
-                result = json.loads(text[start:end])
-            else:
-                raise ValueError(f"No valid JSON found in response for section: {section_name}")
-
-        # Validate the response has the required fields
-        required_fields = ["score", "content", "suggestions"]
-        missing_fields = [field for field in required_fields if field not in result]
-        if missing_fields:
-            raise ValueError(f"Missing required fields in response: {missing_fields}")
+        result = extract_json_response(response.text)
+        validate_section_result(result)
 
         log_info(f"Successfully analyzed section: {section_name}")
         return result
     except Exception as e:
         log_error(f"Error analyzing section {section_name}: {str(e)}")
         raise  # Re-raise to let the decorator handle the retry logic
+
+def validate_section_result(result: Dict[str, Any]):
+    """Validate section analysis result"""
+    required_fields = ["score", "content", "suggestions"]
+    missing_fields = [field for field in required_fields if field not in result]
+    if missing_fields:
+        raise ValueError(f"Missing required fields in response: {missing_fields}")
+
+    # Validate score is an integer between 0 and 100
+    try:
+        score = int(result["score"])
+        if not 0 <= score <= 100:
+            raise ValueError(f"Score must be between 0 and 100, got {score}")
+        result["score"] = score  # Ensure score is an integer
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid score value: {result.get('score')}")
 
 @handle_api_call
 def generate_overview(text: str) -> dict:
@@ -276,7 +307,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 "name": section,
                 **section_analysis
             })
-            time.sleep(1)  # Basic rate limiting between sections
+            # Rate limiter will handle delays between requests
 
         # Calculate overall score
         overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
@@ -287,7 +318,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             "overallScore": round(overall_score)
         }
 
-        log_info(f"Analysis complete: {json.dumps(results)}")
+        log_info("Analysis complete")
         return results
 
     except Exception as e:
