@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Dict, Any
 from datetime import datetime
+from io import BytesIO
 
 def log_error(error_msg: str, include_trace: bool = True):
     """Helper function to log errors with optional stack trace"""
@@ -32,13 +33,18 @@ except Exception as e:
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF with robust error handling"""
     try:
-        text = extract_text(file_bytes)
+        # Create a BytesIO object from the bytes data
+        pdf_file = BytesIO(file_bytes)
+        text = extract_text(pdf_file)
         if not text.strip():
             raise ValueError("No text content extracted from PDF")
         return text
     except Exception as e:
         log_error(f"PDF extraction error: {str(e)}")
         raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+    finally:
+        if 'pdf_file' in locals():
+            pdf_file.close()
 
 def extract_json_response(text: str) -> Dict[str, Any]:
     """Helper function to extract JSON from response text"""
