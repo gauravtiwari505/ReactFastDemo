@@ -23,43 +23,49 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
       "server/resume_service.py",
     ]);
 
-    let resultData = "";
+    let stdoutData = "";
+    let stderrData = "";
 
-    // Handle stdout separately for JSON data
+    // Collect stdout data
     pythonProcess.stdout.on("data", (data) => {
-      resultData += data.toString();
+      stdoutData += data.toString();
     });
 
-    // Log stderr but don't mix with resultData
+    // Collect stderr data separately for debugging
     pythonProcess.stderr.on("data", (data) => {
       console.error(`Python Error: ${data}`);
+      stderrData += data.toString();
     });
 
     pythonProcess.on("close", (code) => {
+      console.log("Python process output:", stdoutData);
+
       if (code !== 0) {
-        reject(new Error("Python process failed"));
+        reject(new Error(`Python process failed with code ${code}. Error: ${stderrData}`));
         return;
       }
 
       try {
-        // Clean the resultData string and parse JSON
-        const cleanedResult = resultData.trim();
-        if (!cleanedResult) {
+        const cleanedOutput = stdoutData.trim();
+        if (!cleanedOutput) {
           reject(new Error("No output from Python process"));
           return;
         }
 
-        const results = JSON.parse(cleanedResult);
+        const results = JSON.parse(cleanedOutput);
         if (results.error) {
-          reject(new Error(results.message || "Analysis failed"));
+          reject(new Error(results.message));
           return;
         }
+
         resolve(results);
       } catch (err) {
-        reject(new Error(`Failed to parse Python output: ${resultData}`));
+        console.error("Failed to parse Python output. Raw output:", stdoutData);
+        reject(new Error(`Failed to parse Python output: ${err.message}`));
       }
     });
 
+    // Send input to Python process
     pythonProcess.stdin.write(JSON.stringify({
       file_bytes: fileBuffer.toString("base64"),
       filename: filename
