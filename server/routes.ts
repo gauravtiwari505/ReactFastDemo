@@ -5,6 +5,8 @@ import multer from "multer";
 import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
+import nodemailer from "nodemailer";
+import htmlPdf from "html-pdf-node";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -16,6 +18,74 @@ const upload = multer({
     }
   }
 });
+
+// Configure email transporter
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'gaurav@metalytics.uk',
+    pass: process.env.GMAIL_APP_PASSWORD
+  }
+});
+
+async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
+  const content = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #333; }
+          .section { margin-bottom: 20px; }
+          .score { color: #0066cc; font-weight: bold; }
+          .suggestions { margin-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1>Resume Analysis Report</h1>
+        <div class="section">
+          <h2>Overview</h2>
+          <p>${analysis.results.overview}</p>
+        </div>
+
+        <div class="section">
+          <h2>Overall Score: <span class="score">${analysis.results.overallScore}%</span></h2>
+        </div>
+
+        <div class="section">
+          <h2>Key Strengths</h2>
+          <ul>
+            ${analysis.results.strengths.map((s: string) => `<li>${s}</li>`).join('')}
+          </ul>
+        </div>
+
+        <div class="section">
+          <h2>Areas for Improvement</h2>
+          <ul>
+            ${analysis.results.weaknesses.map((w: string) => `<li>${w}</li>`).join('')}
+          </ul>
+        </div>
+
+        <div class="section">
+          <h2>Detailed Section Analysis</h2>
+          ${analysis.results.sections.map((section: any) => `
+            <div class="section">
+              <h3>${section.name} - Score: ${section.score}%</h3>
+              <p>${section.content}</p>
+              <h4>Suggestions:</h4>
+              <ul class="suggestions">
+                ${section.suggestions.map((s: string) => `<li>${s}</li>`).join('')}
+              </ul>
+            </div>
+          `).join('')}
+        </div>
+      </body>
+    </html>
+  `;
+
+  const options = { format: 'A4' };
+  const file = { content };
+  return await htmlPdf.generatePdf(file, options);
+}
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -104,6 +174,37 @@ export function registerRoutes(app: Express): Server {
       return res.status(404).json({ message: "Analysis not found" });
     }
     res.json(analysis);
+  });
+
+  app.post("/api/analysis/:id/send-pdf", async (req, res) => {
+    try {
+      const { email } = req.body;
+      const analysis = await storage.getAnalysis(Number(req.params.id));
+
+      if (!analysis) {
+        return res.status(404).json({ message: "Analysis not found" });
+      }
+
+      // Generate PDF
+      const pdfBuffer = await generateAnalysisPDF(analysis);
+
+      // Send email with PDF attachment
+      await transporter.sendMail({
+        from: 'gaurav@metalytics.uk',
+        to: email,
+        subject: 'Your Resume Analysis Report',
+        text: 'Please find attached your resume analysis report from GigFlick.',
+        attachments: [{
+          filename: 'resume-analysis.pdf',
+          content: pdfBuffer
+        }]
+      });
+
+      res.json({ message: "PDF sent successfully" });
+    } catch (error) {
+      console.error("Error sending PDF:", error);
+      res.status(500).json({ message: "Failed to send PDF" });
+    }
   });
 
   app.get("/api/analytics", async (_req, res) => {

@@ -10,6 +10,7 @@ import type { Analysis } from "@shared/schema";
 import { m as motion } from "framer-motion";
 import GaugeChart from "@/components/gauge-chart";
 import RadarScoreChart from "@/components/radar-score-chart";
+import EmailPdfDialog from "@/components/email-pdf-dialog";
 
 export default function Analysis() {
   const { id } = useParams();
@@ -59,6 +60,9 @@ export default function Analysis() {
             </Button>
           </Link>
           <h1 className="text-4xl font-bold">Analysis Results</h1>
+          {analysis.status === "completed" && (
+            <EmailPdfDialog analysisId={analysis.id} />
+          )}
         </motion.div>
 
         {analysis.status === "processing" ? (
@@ -152,10 +156,10 @@ export default function Analysis() {
                   <CardTitle>Section Scores</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <RadarScoreChart 
-                    data={analysis.results?.sections.map(section => ({
+                  <RadarScoreChart
+                    data={analysis.results?.sections.map((section) => ({
                       name: section.name,
-                      score: section.score
+                      score: section.score,
                     })) || []}
                   />
                 </CardContent>
