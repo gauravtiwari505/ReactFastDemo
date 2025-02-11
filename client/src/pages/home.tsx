@@ -46,14 +46,27 @@ export default function Home() {
       {/* Hero Section */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-background z-0" />
-        <div className="relative max-w-6xl mx-auto px-6 pt-20 pb-24 text-center">
+        <div className="relative max-w-6xl mx-auto px-6 pt-8 pb-24 text-center">
+          {/* Logo */}
+          <motion.div
+            className="mb-12"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <img
+              src="/assets/image_1739237826388.png"
+              alt="GigFlick Logo"
+              className="h-12 mx-auto"
+            />
+          </motion.div>
+
           <motion.h1 
             className="text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            AI-Powered Resume Analysis
+            Resume Analysis by GigFlick
           </motion.h1>
           <motion.p 
             className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto"
@@ -61,7 +74,7 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Get instant, detailed feedback on your resume with our advanced AI analysis. 
+            Get instant, detailed feedback on your resume using GigFlick's advanced AI analysis. 
             Improve your chances of landing your dream job.
           </motion.p>
 
