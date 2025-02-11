@@ -1,5 +1,5 @@
 import google.generativeai as genai
-from langchain_community.document_loaders import PDFMinerLoader
+from pdfminer.high_level import extract_text
 import os
 import sys
 import json
@@ -68,11 +68,38 @@ rate_limiter = RateLimiter(requests_per_minute=30)  # Adjust based on API limits
 # Initialize Gemini with proper error handling
 try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
     log_info("Successfully initialized Gemini model")
 except Exception as e:
     log_error(f"Failed to initialize Gemini: {str(e)}")
     raise
+
+def extract_json_response(text: str) -> Dict[str, Any]:
+    """Helper function to extract JSON from response text"""
+    try:
+        return json.loads(text)
+    except:
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start >= 0 and end > start:
+            return json.loads(text[start:end])
+        raise ValueError("No valid JSON found in response")
+
+def validate_section_result(result: Dict[str, Any]):
+    """Validate section analysis result"""
+    required_fields = ["score", "content", "suggestions"]
+    missing_fields = [field for field in required_fields if field not in result]
+    if missing_fields:
+        raise ValueError(f"Missing required fields in response: {missing_fields}")
+
+    # Validate score is an integer between 0 and 100
+    try:
+        score = int(result["score"])
+        if not 0 <= score <= 100:
+            raise ValueError(f"Score must be between 0 and 100, got {score}")
+        result["score"] = score  # Ensure score is an integer
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid score value: {result.get('score')}")
 
 def handle_api_call(func):
     """Decorator to handle API calls with retries and exponential backoff"""
@@ -202,22 +229,6 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
         log_error(f"Error analyzing section {section_name}: {str(e)}")
         raise  # Re-raise to let the decorator handle the retry logic
 
-def validate_section_result(result: Dict[str, Any]):
-    """Validate section analysis result"""
-    required_fields = ["score", "content", "suggestions"]
-    missing_fields = [field for field in required_fields if field not in result]
-    if missing_fields:
-        raise ValueError(f"Missing required fields in response: {missing_fields}")
-
-    # Validate score is an integer between 0 and 100
-    try:
-        score = int(result["score"])
-        if not 0 <= score <= 100:
-            raise ValueError(f"Score must be between 0 and 100, got {score}")
-        result["score"] = score  # Ensure score is an integer
-    except (ValueError, TypeError):
-        raise ValueError(f"Invalid score value: {result.get('score')}")
-
 @handle_api_call
 def generate_overview(text: str) -> dict:
     """Generate an overview analysis of the entire resume using Gemini."""
@@ -248,17 +259,6 @@ def generate_overview(text: str) -> dict:
             "weaknesses": ["Not available due to error"]
         }
 
-def extract_json_response(text: str) -> Dict[str, Any]:
-    """Helper function to extract JSON from response text"""
-    try:
-        return json.loads(text)
-    except:
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        raise ValueError("No valid JSON found in response")
-
 def validate_overview_result(result: Dict[str, Any]):
     """Validate overview analysis result"""
     required_fields = ["overview", "strengths", "weaknesses"]
@@ -273,14 +273,15 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     log_info(f"Saved file to {temp_file_path}")
 
     try:
-        # Load and split document
-        loader = PDFMinerLoader(file_path=temp_file_path)
-        documents = loader.load()
-        log_info(f"Loaded {len(documents)} document(s)")
-
-        # Extract text content
-        full_text = " ".join([doc.page_content for doc in documents])
-        log_info(f"Extracted {len(full_text)} characters of text")
+        # Extract text from PDF using pdfminer.six directly
+        try:
+            full_text = extract_text(temp_file_path)
+            if not full_text or len(full_text.strip()) == 0:
+                raise ValueError("No text content extracted from PDF")
+            log_info(f"Extracted {len(full_text)} characters of text")
+        except Exception as e:
+            log_error(f"Failed to extract text from PDF: {str(e)}")
+            raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
 
         # Generate overall analysis with rate limiting
         overview_analysis = generate_overview(full_text)
