@@ -18,19 +18,7 @@ export const resumeAnalyses = pgTable("resume_analyses", {
       content: string;
       suggestions: string[];
     }[];
-    accessibility: {
-      score: number;
-      issues: {
-        type: string;
-        description: string;
-        severity: 'high' | 'medium' | 'low';
-        suggestion: string;
-      }[];
-      overallFeedback: string;
-    };
   }>(),
-  emailTo: text("email_to"),
-  emailSentAt: text("email_sent_at"),
 });
 
 export const resumeScores = pgTable("resume_scores", {
@@ -48,7 +36,6 @@ export const insertAnalysisSchema = createInsertSchema(resumeAnalyses).pick({
   fileName: true,
   uploadedAt: true,
   status: true,
-  emailTo: true,
 });
 
 // Schema for inserting new scores

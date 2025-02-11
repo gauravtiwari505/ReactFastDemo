@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
-import { insertAnalysisSchema } from "@shared/schema";
+import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
 import { spawn } from "child_process";
+import path from "path";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -22,11 +23,10 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
       "server/resume_service.py",
     ]);
 
-    let stdout = "";
+    let resultData = "";
 
     pythonProcess.stdout.on("data", (data) => {
-      stdout += data.toString();
-      console.log("Python output:", stdout); // Add logging
+      resultData += data.toString();
     });
 
     pythonProcess.stderr.on("data", (data) => {
@@ -35,22 +35,18 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
     pythonProcess.on("close", (code) => {
       if (code !== 0) {
-        console.error("Python process failed with code:", code);
-        reject(new Error("Failed to analyze PDF"));
+        reject(new Error(`Python process exited with code ${code}`));
         return;
       }
-
       try {
-        const trimmedOutput = stdout.trim();
-        console.log("Attempting to parse JSON:", trimmedOutput); // Add logging
-        const results = JSON.parse(trimmedOutput);
+        const results = JSON.parse(resultData);
         resolve(results);
       } catch (err) {
-        console.error("Parse error:", err);
-        reject(new Error("Failed to parse analysis results"));
+        reject(new Error("Failed to parse Python output"));
       }
     });
 
+    // Send the PDF data to Python process
     pythonProcess.stdin.write(JSON.stringify({
       file_bytes: fileBuffer.toString("base64"),
       filename: filename
@@ -72,13 +68,16 @@ export function registerRoutes(app: Express): Server {
         status: "processing"
       });
 
+      // Process the PDF using our Python service
       const results = await analyzePDF(req.file.buffer, req.file.originalname);
 
+      // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
         results: results
       });
 
+      // Store section scores
       if (results.sections) {
         for (const section of results.sections) {
           await storage.createScore({
