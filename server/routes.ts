@@ -6,7 +6,7 @@ import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
 import { spawn } from "child_process";
 import path from "path";
 import nodemailer from "nodemailer";
-import htmlPdf from "html-pdf-node";
+import PDFDocument from "pdfkit";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -29,62 +29,57 @@ const transporter = nodemailer.createTransport({
 });
 
 async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
-  const content = `
-    <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 20px; }
-          h1 { color: #333; }
-          .section { margin-bottom: 20px; }
-          .score { color: #0066cc; font-weight: bold; }
-          .suggestions { margin-left: 20px; }
-        </style>
-      </head>
-      <body>
-        <h1>Resume Analysis Report</h1>
-        <div class="section">
-          <h2>Overview</h2>
-          <p>${analysis.results.overview}</p>
-        </div>
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const doc = new PDFDocument();
 
-        <div class="section">
-          <h2>Overall Score: <span class="score">${analysis.results.overallScore}%</span></h2>
-        </div>
+    // Collect the PDF data
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
 
-        <div class="section">
-          <h2>Key Strengths</h2>
-          <ul>
-            ${analysis.results.strengths.map((s: string) => `<li>${s}</li>`).join('')}
-          </ul>
-        </div>
+    // Add content to the PDF
+    doc.fontSize(24).text('Resume Analysis Report', { align: 'center' });
+    doc.moveDown();
 
-        <div class="section">
-          <h2>Areas for Improvement</h2>
-          <ul>
-            ${analysis.results.weaknesses.map((w: string) => `<li>${w}</li>`).join('')}
-          </ul>
-        </div>
+    // Overview section
+    doc.fontSize(18).text('Overview');
+    doc.fontSize(12).text(analysis.results.overview);
+    doc.moveDown();
 
-        <div class="section">
-          <h2>Detailed Section Analysis</h2>
-          ${analysis.results.sections.map((section: any) => `
-            <div class="section">
-              <h3>${section.name} - Score: ${section.score}%</h3>
-              <p>${section.content}</p>
-              <h4>Suggestions:</h4>
-              <ul class="suggestions">
-                ${section.suggestions.map((s: string) => `<li>${s}</li>`).join('')}
-              </ul>
-            </div>
-          `).join('')}
-        </div>
-      </body>
-    </html>
-  `;
+    // Overall Score
+    doc.fontSize(18).text(`Overall Score: ${analysis.results.overallScore}%`);
+    doc.moveDown();
 
-  const options = { format: 'A4' };
-  const file = { content };
-  return await htmlPdf.generatePdf(file, options);
+    // Key Strengths
+    doc.fontSize(18).text('Key Strengths');
+    analysis.results.strengths.forEach((strength: string) => {
+      doc.fontSize(12).text(`• ${strength}`);
+    });
+    doc.moveDown();
+
+    // Areas for Improvement
+    doc.fontSize(18).text('Areas for Improvement');
+    analysis.results.weaknesses.forEach((weakness: string) => {
+      doc.fontSize(12).text(`• ${weakness}`);
+    });
+    doc.moveDown();
+
+    // Detailed Section Analysis
+    doc.fontSize(18).text('Detailed Section Analysis');
+    analysis.results.sections.forEach((section: any) => {
+      doc.moveDown();
+      doc.fontSize(14).text(`${section.name} - Score: ${section.score}%`);
+      doc.fontSize(12).text(section.content);
+      doc.fontSize(12).text('Suggestions:');
+      section.suggestions.forEach((suggestion: string) => {
+        doc.text(`• ${suggestion}`);
+      });
+    });
+
+    // Finalize the PDF
+    doc.end();
+  });
 }
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
