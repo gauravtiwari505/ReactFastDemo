@@ -6,17 +6,26 @@ import json
 import base64
 from pathlib import Path
 import time
+import traceback
 from typing import Dict, Any, List
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 
+def log_error(error_msg: str, include_trace: bool = True):
+    """Helper function to log errors with optional stack trace"""
+    error_output = f"Error: {error_msg}"
+    if include_trace:
+        error_output += f"\nStack trace:\n{traceback.format_exc()}"
+    print(error_output, file=sys.stderr)
+
 # Initialize Gemini with proper error handling
 try:
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     model = genai.GenerativeModel('gemini-1.5-pro')
+    print("Successfully initialized Gemini model", file=sys.stderr)
 except Exception as e:
-    print(f"Error initializing Gemini: {str(e)}", file=sys.stderr)
+    log_error(f"Failed to initialize Gemini: {str(e)}")
     raise
 
 def handle_api_call(func):
@@ -27,21 +36,25 @@ def handle_api_call(func):
 
         for attempt in range(max_retries):
             try:
+                print(f"Attempting {func.__name__} (attempt {attempt + 1}/{max_retries})", file=sys.stderr)
                 return func(*args, **kwargs)
             except Exception as e:
                 if "429" in str(e) and attempt < max_retries - 1:
-                    print(f"Rate limit hit, waiting {retry_delay} seconds...", file=sys.stderr)
+                    print(f"Rate limit hit for {func.__name__}, waiting {retry_delay} seconds...", file=sys.stderr)
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
-                print(f"Error in {func.__name__}: {str(e)}", file=sys.stderr)
-                raise
+                log_error(f"Error in {func.__name__}: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise
         return func(*args, **kwargs)
     return wrapper
 
 @handle_api_call
 def analyze_resume_section(text: str, section_name: str) -> dict:
     """Analyze a specific section of the resume using Gemini with proper error handling."""
+    print(f"Starting analysis of section: {section_name}", file=sys.stderr)
+
     prompts = {
         "Contact Information": """Extract and evaluate the contact information. Output a dictionary with the following keys:
             - score: Rate the contact information by giving a score (integer) from 0 to 100
@@ -119,27 +132,38 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
     }}"""
 
     try:
+        print(f"Sending request to Gemini for section: {section_name}", file=sys.stderr)
         response = model.generate_content(prompt)
+
+        if not response or not response.text:
+            raise ValueError("Empty response from Gemini")
+
+        print(f"Received response for section: {section_name}", file=sys.stderr)
+        print(f"Raw response: {response.text[:200]}...", file=sys.stderr)  # Log first 200 chars
+
         try:
-            # First try to parse the entire response
             result = json.loads(response.text)
-        except:
-            # If that fails, try to extract just the JSON part
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse JSON directly, attempting extraction for section: {section_name}", file=sys.stderr)
+            # If direct parsing fails, try to extract JSON
             text = response.text
             start = text.find('{')
             end = text.rfind('}') + 1
             if start >= 0 and end > start:
                 result = json.loads(text[start:end])
             else:
-                raise ValueError("No valid JSON found in response")
+                raise ValueError(f"No valid JSON found in response for section: {section_name}")
 
         # Validate the response has the required fields
-        if not all(key in result for key in ["score", "content", "suggestions"]):
-            raise ValueError("Missing required fields in response")
+        required_fields = ["score", "content", "suggestions"]
+        missing_fields = [field for field in required_fields if field not in result]
+        if missing_fields:
+            raise ValueError(f"Missing required fields in response: {missing_fields}")
 
+        print(f"Successfully analyzed section: {section_name}", file=sys.stderr)
         return result
     except Exception as e:
-        print(f"Error analyzing section {section_name}: {str(e)}", file=sys.stderr)
+        log_error(f"Error analyzing section {section_name}: {str(e)}")
         return {
             "score": 0,
             "suggestions": [f"Unable to analyze this section: {str(e)}"],
