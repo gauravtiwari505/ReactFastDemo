@@ -22,7 +22,8 @@ try {
 // Initialize BigQuery with both numeric and string project IDs
 export const bigquery = new BigQuery({
   projectId: GOOGLE_CLOUD_PROJECT,
-  credentials
+  credentials,
+  location: 'US'  // Explicitly set the location
 });
 
 // Get the numeric project ID from credentials
@@ -40,7 +41,9 @@ async function ensureTablesExist() {
     const datasetExists = datasets.some(dataset => dataset.id === datasetId);
 
     if (!datasetExists) {
-      await bigquery.createDataset(datasetId);
+      await bigquery.createDataset(datasetId, {
+        location: 'US'
+      });
       console.log('Created dataset:', datasetId);
       // Wait a bit after dataset creation
       await new Promise(resolve => setTimeout(resolve, retryDelay));

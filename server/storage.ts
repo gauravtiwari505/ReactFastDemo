@@ -32,21 +32,21 @@ export interface IStorage {
 
 export class BigQueryStorage implements IStorage {
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
-    const table = bigquery
-      .dataset(DATASET)
-      .table('resume_analyses');
-
-    // Convert any JSON fields to strings for storage
-    const rows = [{
-      ...insertAnalysis,
-      id: Date.now().toString(),
-      results: typeof insertAnalysis.results === 'object' 
-        ? JSON.stringify(insertAnalysis.results)
-        : insertAnalysis.results
-    }];
-
     try {
-      await table.insert(rows);
+      const timestamp = new Date().toISOString();
+      const id = Date.now().toString();
+
+      // Convert results to string before insertion
+      const row = {
+        id,
+        fileName: insertAnalysis.fileName,
+        uploadedAt: timestamp,
+        status: insertAnalysis.status,
+        results: JSON.stringify(insertAnalysis.results || {})
+      };
+
+      const table = bigquery.dataset(DATASET).table('resume_analyses');
+      await table.insert([row]);
       console.log('Successfully inserted row into resume_analyses');
 
       // Return the inserted row
@@ -61,7 +61,7 @@ export class BigQueryStorage implements IStorage {
           FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
         `,
-        params: { id: rows[0].id }
+        params: { id }
       });
 
       if (!result || !result[0]) {
@@ -135,20 +135,21 @@ export class BigQueryStorage implements IStorage {
   }
 
   async createScore(insertScore: InsertScore): Promise<ResumeScore> {
-    const table = bigquery
-      .dataset(DATASET)
-      .table('resume_scores');
-
-    const rows = [{
-      ...insertScore,
-      id: Date.now().toString(),
-      suggestions: Array.isArray(insertScore.suggestions)
-        ? JSON.stringify(insertScore.suggestions)
-        : insertScore.suggestions
-    }];
-
     try {
-      await table.insert(rows);
+      const id = Date.now().toString();
+
+      // Convert suggestions to string before insertion
+      const row = {
+        id,
+        analysisId: insertScore.analysisId,
+        sectionName: insertScore.sectionName,
+        score: insertScore.score,
+        feedback: insertScore.feedback,
+        suggestions: JSON.stringify(insertScore.suggestions || [])
+      };
+
+      const table = bigquery.dataset(DATASET).table('resume_scores');
+      await table.insert([row]);
       console.log('Successfully inserted row into resume_scores');
 
       const [result] = await bigquery.query({
@@ -163,7 +164,7 @@ export class BigQueryStorage implements IStorage {
           FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\`
           WHERE id = @id
         `,
-        params: { id: rows[0].id }
+        params: { id }
       });
 
       if (!result || !result[0]) {
