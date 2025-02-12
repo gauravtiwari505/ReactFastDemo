@@ -61,7 +61,7 @@ export class BigQueryStorage implements IStorage {
       const row = {
         id,
         fileName: insertAnalysis.fileName,
-        uploadedAt: timestamp,
+        resumeUploadedAt: timestamp,  // Updated column name
         status: insertAnalysis.status,
         results: '{}'  // Initialize with empty JSON object
       };
@@ -71,8 +71,8 @@ export class BigQueryStorage implements IStorage {
       // Insert using direct SQL to ensure consistency
       const insertQuery = `
         INSERT INTO \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-        (id, fileName, uploadedAt, status, results)
-        VALUES(@id, @fileName, @uploadedAt, @status, @results)
+        (id, fileName, resumeUploadedAt, status, results)
+        VALUES(@id, @fileName, @resumeUploadedAt, @status, @results)
       `;
 
       await bigquery.query({
@@ -82,11 +82,11 @@ export class BigQueryStorage implements IStorage {
 
       console.log('Successfully inserted row');
 
-      // Return the created analysis with empty results
+      // Return the created analysis
       return {
         id,
         fileName: insertAnalysis.fileName,
-        uploadedAt: timestamp,
+        uploadedAt: timestamp,  // Keep the interface consistent
         status: insertAnalysis.status,
         results: {}
       };
@@ -128,10 +128,16 @@ export class BigQueryStorage implements IStorage {
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
     try {
       await this.verifyTableAccess('resume_analyses');
-      const updateData = {
+
+      // Add analysisFinishedAt when status is completed
+      const updateData: any = {
         ...update,
         results: update.results ? JSON.stringify(update.results) : undefined
       };
+
+      if (update.status === 'completed') {
+        updateData.analysisFinishedAt = new Date().toISOString();
+      }
 
       const setClause = Object.entries(updateData)
         .filter(([_, value]) => value !== undefined)

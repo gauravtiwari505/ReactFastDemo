@@ -4,7 +4,7 @@ import { z } from "zod";
 export const resumeAnalysisSchema = z.object({
   id: z.string(),
   fileName: z.string(),
-  uploadedAt: z.string(),
+  uploadedAt: z.string(),  // Keep the old name in the interface for backward compatibility
   status: z.string(),
   results: z.object({
     overview: z.string(),

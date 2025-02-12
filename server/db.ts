@@ -54,7 +54,8 @@ async function ensureTablesExist() {
     const analysesSchema = [
       { name: 'id', type: 'STRING', mode: 'REQUIRED' },
       { name: 'fileName', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'uploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },
+      { name: 'resumeUploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },  // Renamed from uploadedAt
+      { name: 'analysisFinishedAt', type: 'TIMESTAMP', mode: 'NULLABLE' }, // New column
       { name: 'status', type: 'STRING', mode: 'REQUIRED' },
       { name: 'results', type: 'STRING', mode: 'NULLABLE' }  // Store JSON as STRING
     ];
@@ -119,7 +120,7 @@ async function ensureTablesExist() {
     // Create tables with retries
     await createTableWithRetry('resume_analyses', analysesSchema, {
       type: 'DAY',
-      field: 'uploadedAt'
+      field: 'resumeUploadedAt'
     });
 
     await createTableWithRetry('resume_scores', scoresSchema);
