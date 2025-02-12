@@ -19,35 +19,36 @@ try {
   throw new Error("Invalid BIGQUERY_CREDENTIALS JSON format in environment variables");
 }
 
-// Initialize BigQuery with both numeric and string project IDs
+// Initialize BigQuery with explicit configuration
 export const bigquery = new BigQuery({
-  projectId: GOOGLE_CLOUD_PROJECT,
+  projectId: credentials.project_id, // Use numeric project ID from credentials
   credentials,
-  location: 'US'  // Explicitly set the location
+  location: 'US'
 });
-
-// Get the numeric project ID from credentials
-const numericProjectId = credentials.project_id;
 
 // Create dataset and tables if they don't exist
 async function ensureTablesExist() {
   const datasetId = 'gigflick';
-  const retryDelay = 2000; // 2 seconds delay between retries
+  const retryDelay = 3000; // 3 seconds delay between retries
   const maxRetries = 3;
 
   try {
-    // Create dataset if it doesn't exist
+    // Verify BigQuery permissions first
     const [datasets] = await bigquery.getDatasets();
-    const datasetExists = datasets.some(dataset => dataset.id === datasetId);
+    console.log('Successfully verified BigQuery access');
 
-    if (!datasetExists) {
-      await bigquery.createDataset(datasetId, {
-        location: 'US'
-      });
-      console.log('Created dataset:', datasetId);
-      // Wait a bit after dataset creation
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
+    // Create or get dataset
+    const [dataset] = await bigquery.createDataset(datasetId, {
+      location: 'US'
+    }).catch(async (error) => {
+      if (error.code === 409) {
+        return await bigquery.dataset(datasetId).get();
+      }
+      throw error;
+    });
+
+    console.log(`Dataset ${datasetId} ready`);
+    await new Promise(resolve => setTimeout(resolve, retryDelay));
 
     // Define table schemas
     const analysesSchema = [
@@ -67,51 +68,53 @@ async function ensureTablesExist() {
       { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }  // Store JSON as STRING
     ];
 
-    const dataset = bigquery.dataset(datasetId);
-
     // Helper function to create table with retries
     async function createTableWithRetry(tableName: string, schema: any, timePartitioning?: any) {
+      const table = dataset.table(tableName);
+
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          // Delete existing table if it exists
-          try {
-            await dataset.table(tableName).delete();
+          console.log(`Attempt ${attempt} to create/verify table ${tableName}`);
+
+          // Check if table exists
+          const [exists] = await table.exists();
+
+          if (exists) {
+            // Delete existing table
+            await table.delete();
             console.log(`Deleted existing table: ${tableName}`);
             await new Promise(resolve => setTimeout(resolve, retryDelay));
-          } catch (error: any) {
-            if (error.code !== 404) {
-              console.warn(`Warning during table deletion: ${error.message}`);
-            }
           }
 
-          // Create new table
-          const tableOptions = {
+          // Create new table with full options
+          const createOptions = {
             schema,
+            location: 'US',
             ...(timePartitioning && { timePartitioning })
           };
 
-          await dataset.createTable(tableName, tableOptions);
+          await dataset.createTable(tableName, createOptions);
           console.log(`Created table: ${tableName}`);
 
-          // Verify table exists
-          const [tableExists] = await dataset.table(tableName).exists();
+          // Wait after creation
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+
+          // Verify table exists and is accessible
+          const [tableExists] = await table.exists();
           if (!tableExists) {
             throw new Error(`Table ${tableName} was not created successfully`);
           }
 
-          // Double verify by trying to query the table
-          await bigquery.query({
-            query: `SELECT 1 FROM \`${numericProjectId}.${datasetId}.${tableName}\` LIMIT 1`
-          });
+          // Try to query the table
+          const query = `SELECT 1 FROM \`${credentials.project_id}.${datasetId}.${tableName}\` LIMIT 0`;
+          await bigquery.query({ query });
 
-          console.log(`Verified table ${tableName} exists and is queryable`);
-          // Wait after successful creation
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          console.log(`Successfully verified table ${tableName} exists and is queryable`);
           return;
         } catch (error: any) {
           console.warn(`Attempt ${attempt} failed for ${tableName}: ${error.message}`);
           if (attempt === maxRetries) throw error;
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          await new Promise(resolve => setTimeout(resolve, retryDelay * attempt)); // Exponential backoff
         }
       }
     }

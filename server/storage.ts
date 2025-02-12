@@ -6,13 +6,15 @@ import type {
   InsertScore 
 } from "@shared/schema";
 
-// Get project ID from environment
-const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
 const DATASET = 'gigflick';
 
-// Get numeric project ID from credentials
+// Get credentials and project ID
 const credentials = JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}');
-const NUMERIC_PROJECT_ID = credentials.project_id || PROJECT_ID;
+const PROJECT_ID = credentials.project_id;
+
+if (!PROJECT_ID) {
+  throw new Error('Project ID not found in BIGQUERY_CREDENTIALS');
+}
 
 export interface IStorage {
   createAnalysis(analysis: InsertAnalysis): Promise<ResumeAnalysis>;
@@ -31,12 +33,19 @@ export interface IStorage {
 }
 
 export class BigQueryStorage implements IStorage {
+  private async verifyTableAccess(tableName: string): Promise<void> {
+    const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
+    await bigquery.query({ query });
+  }
+
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
     try {
+      // Verify table access first
+      await this.verifyTableAccess('resume_analyses');
+
       const timestamp = new Date().toISOString();
       const id = Date.now().toString();
 
-      // Convert results to string before insertion
       const row = {
         id,
         fileName: insertAnalysis.fileName,
@@ -45,20 +54,16 @@ export class BigQueryStorage implements IStorage {
         results: JSON.stringify(insertAnalysis.results || {})
       };
 
+      // Insert the row
       const table = bigquery.dataset(DATASET).table('resume_analyses');
       await table.insert([row]);
       console.log('Successfully inserted row into resume_analyses');
 
-      // Return the inserted row
+      // Fetch the inserted row
       const [result] = await bigquery.query({
         query: `
-          SELECT 
-            id,
-            fileName,
-            uploadedAt,
-            status,
-            results
-          FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
+          SELECT *
+          FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
         `,
         params: { id }
@@ -68,6 +73,7 @@ export class BigQueryStorage implements IStorage {
         throw new Error('Failed to retrieve inserted record');
       }
 
+      // Parse the results JSON
       return {
         ...result[0],
         results: result[0].results ? JSON.parse(result[0].results) : {}
@@ -80,6 +86,7 @@ export class BigQueryStorage implements IStorage {
 
   async getAnalysis(id: string): Promise<ResumeAnalysis | undefined> {
     try {
+      await this.verifyTableAccess('resume_analyses');
       const [rows] = await bigquery.query({
         query: `
           SELECT 
@@ -88,7 +95,7 @@ export class BigQueryStorage implements IStorage {
             uploadedAt,
             status,
             results
-          FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
+          FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
         `,
         params: { id }
@@ -108,6 +115,7 @@ export class BigQueryStorage implements IStorage {
 
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
     try {
+      await this.verifyTableAccess('resume_analyses');
       const updateData = {
         ...update,
         results: update.results ? JSON.stringify(update.results) : undefined
@@ -120,7 +128,7 @@ export class BigQueryStorage implements IStorage {
 
       await bigquery.query({
         query: `
-          UPDATE \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
+          UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
           SET ${setClause}
           WHERE id = @id
         `,
@@ -136,9 +144,9 @@ export class BigQueryStorage implements IStorage {
 
   async createScore(insertScore: InsertScore): Promise<ResumeScore> {
     try {
+      await this.verifyTableAccess('resume_scores');
       const id = Date.now().toString();
 
-      // Convert suggestions to string before insertion
       const row = {
         id,
         analysisId: insertScore.analysisId,
@@ -161,7 +169,7 @@ export class BigQueryStorage implements IStorage {
             score,
             feedback,
             suggestions
-          FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\`
+          FROM \`${PROJECT_ID}.${DATASET}.resume_scores\`
           WHERE id = @id
         `,
         params: { id }
@@ -183,21 +191,23 @@ export class BigQueryStorage implements IStorage {
 
   async getAnalytics() {
     try {
+      await this.verifyTableAccess('resume_analyses');
+      await this.verifyTableAccess('resume_scores');
       const [rows] = await bigquery.query({
         query: `
           WITH ScoreStats AS (
             SELECT
               COUNT(DISTINCT a.id) as totalResumes,
               AVG(s.score) as averageScore
-            FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\` a
-            LEFT JOIN \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\` s ON a.id = s.analysisId
+            FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\` a
+            LEFT JOIN \`${PROJECT_ID}.${DATASET}.resume_scores\` s ON a.id = s.analysisId
           ),
           SectionStats AS (
             SELECT
               sectionName,
               AVG(score) as averageScore,
               COUNT(*) as totalAnalyses
-            FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\`
+            FROM \`${PROJECT_ID}.${DATASET}.resume_scores\`
             GROUP BY sectionName
           )
           SELECT
