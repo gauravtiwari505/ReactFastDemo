@@ -26,8 +26,28 @@ GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 if not GOOGLE_API_KEY:
     raise ValueError("GOOGLE_API_KEY environment variable is not set")
 
+# Initialize Gemini globally
+genai.configure(api_key=GOOGLE_API_KEY)
+try:
+    model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
+    log_info("Successfully initialized Gemini model")
+except Exception as e:
+    log_error(f"Failed to initialize Gemini: {str(e)}")
+    raise
+
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
+
+def log_error(error_msg: str, include_trace: bool = True):
+    """Helper function to log errors with optional stack trace"""
+    error_output = f"Error: {error_msg}"
+    if include_trace:
+        error_output += f"\nStack trace:\n{traceback.format_exc()}"
+    print(error_output, file=sys.stderr)
+
+def log_info(msg: str):
+    """Helper function for logging informational messages"""
+    print(msg, file=sys.stderr)
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from PDF with robust error handling"""
@@ -64,16 +84,6 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         output_string.close()
         device.close()
 
-def log_error(error_msg: str, include_trace: bool = True):
-    """Helper function to log errors with optional stack trace"""
-    error_output = f"Error: {error_msg}"
-    if include_trace:
-        error_output += f"\nStack trace:\n{traceback.format_exc()}"
-    print(error_output, file=sys.stderr)
-
-def log_info(msg: str):
-    """Helper function for logging informational messages"""
-    print(msg, file=sys.stderr)
 
 def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
@@ -90,15 +100,6 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         except Exception as e:
             log_error(f"Failed to extract text from PDF: {str(e)}")
             raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
-
-        # Initialize Gemini with proper error handling
-        try:
-            genai.configure(api_key=GOOGLE_API_KEY)
-            model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
-            log_info("Successfully initialized Gemini model")
-        except Exception as e:
-            log_error(f"Failed to initialize Gemini: {str(e)}")
-            raise
 
         # Generate overview analysis with rate limiting
         overview_analysis = generate_overview(full_text)
