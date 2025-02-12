@@ -60,7 +60,12 @@ npm run dev
 ```
 gigflick/
 ├── client/          # React frontend
+│   ├── src/
+│   ├── components/  # Reusable UI components
+│   └── pages/       # Route components
 ├── server/          # Express backend
+│   ├── routes/      # API endpoints
+│   ├── services/    # Business logic
 │   └── resume_service.py  # Python AI service
 ├── shared/          # Shared types and schemas
 └── ...
