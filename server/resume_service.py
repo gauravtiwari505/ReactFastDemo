@@ -221,81 +221,92 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
     """Analyze a specific section of the resume using Gemini with proper error handling."""
     log_info(f"Starting analysis of section: {section_name}")
 
-    prompts = {
-        "Contact Information": """Extract and evaluate the contact information. Output a dictionary with the following keys:
-            - score: Rate the contact information by giving a score (integer) from 0 to 100
-            - content: Evaluate the contact information in 2-3 sentences
-            - suggestions: A list of improvements for the contact section""",
-        "Professional Summary": """Extract and evaluate the summary/objective section:
-            - If there is no summary section, generate a strong summary in no more than 5 sentences
-            - Include: years of experience, top skills and experiences, biggest achievements, and objective
-            Output a dictionary with:
-            - score: Rate the summary by giving a score (integer) from 0 to 100
-            - content: Evaluate the summary format and content in 2-3 sentences
-            - suggestions: A list of ways to strengthen the summary""",
-        "Work Experience": """Extract and evaluate all work experiences:
-            For each work experience analyze:
-            - Job title and company
-            - Responsibilities and achievements
-            - Use of action verbs and metrics
-            Output a dictionary with:
-            - score: Rate the work experience by giving a score (integer) from 0 to 100
-            - content: Evaluate the experience quality in 2-3 sentences
-            - suggestions: A list of ways to improve the work experience descriptions""",
-        "Skills": """Analyze the skills section and output a dictionary with:
-            - score: Rate the skills by giving a score (integer) from 0 to 100
-            - content: Evaluate the skills presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the skills section""",
-        "Education": """Extract and evaluate all educational background:
-            For each education entry analyze:
-            - Institution name
-            - Degree and honors
-            - Dates and achievements
-            Output a dictionary with:
-            - score: Rate the education section by giving a score (integer) from 0 to 100
-            - content: Evaluate the education presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the education section""",
-        "Languages": """Extract and evaluate language proficiencies:
-            For each language analyze:
-            - Language name
-            - Proficiency level
-            Output a dictionary with:
-            - score: Rate the language section by giving a score (integer) from 0 to 100
-            - content: Evaluate the language skills presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the language section""",
-        "Projects": """Extract and evaluate all projects:
-            For each project analyze:
-            - Project title and description
-            - Technologies used
-            - Impact and results
-            Output a dictionary with:
-            - score: Rate the projects section by giving a score (integer) from 0 to 100
-            - content: Evaluate the projects presentation in 2-3 sentences
-            - suggestions: A list of ways to improve project descriptions""",
-        "Certifications": """Extract and evaluate all certifications:
-            For each certification analyze:
-            - Certification name
-            - Issuing organization
-            - Date and validity
-            Output a dictionary with:
-            - score: Rate the certifications by giving a score (integer) from 0 to 100
-            - content: Evaluate the certifications presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the certifications section"""
-    }
+    # Add extra validation and formatting for work experience
+    if section_name == "Work Experience":
+        prompt = f"""Analyze the following work experience section and provide a detailed evaluation:
 
-    prompt = f"""Analyze the following resume section: {section_name}
+Text to analyze:
+{text}
 
-    Text to analyze:
-    {text}
+Please analyze the work experience section for:
+1. Quality of role descriptions
+2. Use of action verbs and metrics
+3. Career progression
+4. Impact and achievements
 
-    {prompts.get(section_name, prompts["Work Experience"])}
+Output ONLY a JSON object with EXACTLY these fields:
+{{
+    "score": <integer 0-100>,
+    "content": <2-3 sentence evaluation>,
+    "suggestions": [<list of 3-5 specific improvements>]
+}}"""
+    else:
+        prompts = {
+            "Contact Information": """Extract and evaluate the contact information. Output a dictionary with the following keys:
+                - score: Rate the contact information by giving a score (integer) from 0 to 100
+                - content: Evaluate the contact information in 2-3 sentences
+                - suggestions: A list of improvements for the contact section""",
+            "Professional Summary": """Extract and evaluate the summary/objective section:
+                - If there is no summary section, generate a strong summary in no more than 5 sentences
+                - Include: years of experience, top skills and experiences, biggest achievements, and objective
+                Output a dictionary with:
+                - score: Rate the summary by giving a score (integer) from 0 to 100
+                - content: Evaluate the summary format and content in 2-3 sentences
+                - suggestions: A list of ways to strengthen the summary""",
+            "Skills": """Analyze the skills section and output a dictionary with:
+                - score: Rate the skills by giving a score (integer) from 0 to 100
+                - content: Evaluate the skills presentation in 2-3 sentences
+                - suggestions: A list of ways to improve the skills section""",
+            "Education": """Extract and evaluate all educational background:
+                For each education entry analyze:
+                - Institution name
+                - Degree and honors
+                - Dates and achievements
+                Output a dictionary with:
+                - score: Rate the education section by giving a score (integer) from 0 to 100
+                - content: Evaluate the education presentation in 2-3 sentences
+                - suggestions: A list of ways to improve the education section""",
+            "Languages": """Extract and evaluate language proficiencies:
+                For each language analyze:
+                - Language name
+                - Proficiency level
+                Output a dictionary with:
+                - score: Rate the language section by giving a score (integer) from 0 to 100
+                - content: Evaluate the language skills presentation in 2-3 sentences
+                - suggestions: A list of ways to improve the language section""",
+            "Projects": """Extract and evaluate all projects:
+                For each project analyze:
+                - Project title and description
+                - Technologies used
+                - Impact and results
+                Output a dictionary with:
+                - score: Rate the projects section by giving a score (integer) from 0 to 100
+                - content: Evaluate the projects presentation in 2-3 sentences
+                - suggestions: A list of ways to improve project descriptions""",
+            "Certifications": """Extract and evaluate all certifications:
+                For each certification analyze:
+                - Certification name
+                - Issuing organization
+                - Date and validity
+                Output a dictionary with:
+                - score: Rate the certifications by giving a score (integer) from 0 to 100
+                - content: Evaluate the certifications presentation in 2-3 sentences
+                - suggestions: A list of ways to improve the certifications section"""
+        }
 
-    Important: Respond with ONLY a JSON object that has exactly these keys:
-    {{
-        "score": <number 0-100>,
-        "content": <string evaluation>,
-        "suggestions": [<array of string suggestions>]
-    }}"""
+        prompt = f"""Analyze the following resume section: {section_name}
+
+        Text to analyze:
+        {text}
+
+        {prompts.get(section_name, prompts["Work Experience"])}
+
+        Important: Respond with ONLY a JSON object that has exactly these keys:
+        {{
+            "score": <number 0-100>,
+            "content": <string evaluation>,
+            "suggestions": [<array of string suggestions>]
+        }}"""
 
     try:
         log_info(f"Sending request to Gemini for section: {section_name}")
@@ -308,13 +319,27 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
         log_info(f"Raw response preview: {response.text[:200]}...")  # Log first 200 chars
 
         result = extract_json_response(response.text)
+
+        # Additional validation for work experience
+        if section_name == "Work Experience":
+            if not isinstance(result.get("score"), (int, float)):
+                result["score"] = 0
+            if not isinstance(result.get("content"), str):
+                result["content"] = "Analysis failed to generate content"
+            if not isinstance(result.get("suggestions"), list):
+                result["suggestions"] = ["Resubmit for a detailed analysis"]
+
         validate_section_result(result)
 
         log_info(f"Successfully analyzed section: {section_name}")
         return result
     except Exception as e:
         log_error(f"Error analyzing section {section_name}: {str(e)}")
-        raise  # Re-raise to let the decorator handle the retry logic
+        return {
+            "score": 0,
+            "content": f"Analysis failed: {str(e)}",
+            "suggestions": ["Resubmit for analysis", "Ensure work experience section is properly formatted", "Check for any special characters that might affect parsing"]
+        }
 
 @handle_api_call
 def generate_overview(text: str) -> dict:
