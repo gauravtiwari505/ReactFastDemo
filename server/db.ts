@@ -5,9 +5,10 @@ import * as schema from "@shared/schema";
 
 neonConfig.webSocketConstructor = ws;
 
+// Add more detailed error message for better debugging
 if (!process.env.DATABASE_URL) {
   throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+    "DATABASE_URL must be set in your .env file. Format should be: postgresql://username:password@localhost:5432/gigflick",
   );
 }
 

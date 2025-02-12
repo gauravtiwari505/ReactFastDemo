@@ -1,10 +1,3 @@
-# Database (for local development)
-DATABASE_URL=postgresql://your_username:your_password@localhost:5432/gigflick
-
-# Email (Gmail)
-GMAIL_APP_PASSWORD=your_app_password
-```
-
 ### Database Schema
 The application uses PostgreSQL with Drizzle ORM. Here's the current schema:
 
