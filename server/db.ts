@@ -19,9 +19,9 @@ try {
   throw new Error("Invalid BIGQUERY_CREDENTIALS JSON format in environment variables");
 }
 
-// Initialize BigQuery with explicit configuration
+// Initialize BigQuery with correct project ID
 export const bigquery = new BigQuery({
-  projectId: credentials.project_id, // Use numeric project ID from credentials
+  projectId: GOOGLE_CLOUD_PROJECT,  // Use the projectId from environment variable
   credentials,
   location: 'US'
 });
@@ -106,7 +106,7 @@ async function ensureTablesExist() {
           }
 
           // Try to query the table
-          const query = `SELECT 1 FROM \`${credentials.project_id}.${datasetId}.${tableName}\` LIMIT 0`;
+          const query = `SELECT 1 FROM \`${GOOGLE_CLOUD_PROJECT}.${datasetId}.${tableName}\` LIMIT 0`;
           await bigquery.query({ query });
 
           console.log(`Successfully verified table ${tableName} exists and is queryable`);

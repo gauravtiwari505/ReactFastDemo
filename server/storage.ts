@@ -10,11 +10,13 @@ const DATASET = 'gigflick';
 
 // Get credentials and project ID
 const credentials = JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}');
-const PROJECT_ID = credentials.project_id;
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || credentials.project_id;
 
 if (!PROJECT_ID) {
-  throw new Error('Project ID not found in BIGQUERY_CREDENTIALS');
+  throw new Error('Project ID not found in BIGQUERY_CREDENTIALS or GOOGLE_CLOUD_PROJECT');
 }
+
+console.log('Using BigQuery Project ID:', PROJECT_ID);
 
 export interface IStorage {
   createAnalysis(analysis: InsertAnalysis): Promise<ResumeAnalysis>;
@@ -80,27 +82,15 @@ export class BigQueryStorage implements IStorage {
 
       console.log('Successfully inserted row');
 
-      // Fetch the inserted row
-      const [result] = await bigquery.query({
-        query: `
-          SELECT *
-          FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-          WHERE id = @id
-        `,
-        params: { id }
-      });
-
-      if (!result || !result[0]) {
-        throw new Error('Failed to retrieve inserted record');
-      }
-
-      console.log('Successfully retrieved inserted record');
-
+      // Return the created analysis with empty results
       return {
-        ...result[0],
+        id,
+        fileName: insertAnalysis.fileName,
+        uploadedAt: timestamp,
+        status: insertAnalysis.status,
         results: {}
-      } as ResumeAnalysis;
-    } catch (error) {
+      };
+    } catch (error: any) {
       console.error('Error in createAnalysis:', error);
       throw new Error(`Failed to create analysis record: ${error.message}`);
     }
