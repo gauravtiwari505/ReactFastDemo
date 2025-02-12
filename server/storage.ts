@@ -61,7 +61,7 @@ export class BigQueryStorage implements IStorage {
       const row = {
         id,
         fileName: insertAnalysis.fileName,
-        resumeUploadedAt: timestamp,  // Updated column name
+        resumeUploadedAt: timestamp,
         status: insertAnalysis.status,
         results: '{}'  // Initialize with empty JSON object
       };
@@ -104,7 +104,7 @@ export class BigQueryStorage implements IStorage {
           SELECT 
             id,
             fileName,
-            uploadedAt,
+            resumeUploadedAt as uploadedAt,
             status,
             results
           FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
@@ -144,12 +144,14 @@ export class BigQueryStorage implements IStorage {
         .map(([key, _]) => `${key} = @${key}`)
         .join(', ');
 
+      const updateQuery = `
+        UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+        SET ${setClause}
+        WHERE id = @id
+      `;
+
       await bigquery.query({
-        query: `
-          UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-          SET ${setClause}
-          WHERE id = @id
-        `,
+        query: updateQuery,
         params: { ...updateData, id }
       });
 
