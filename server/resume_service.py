@@ -18,6 +18,18 @@ import traceback
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
+# Define logging functions first
+def log_error(error_msg: str, include_trace: bool = True):
+    """Helper function to log errors with optional stack trace"""
+    error_output = f"Error: {error_msg}"
+    if include_trace:
+        error_output += f"\nStack trace:\n{traceback.format_exc()}"
+    print(error_output, file=sys.stderr)
+
+def log_info(msg: str):
+    """Helper function for logging informational messages"""
+    print(msg, file=sys.stderr)
+
 # Load environment variables
 load_dotenv()
 
@@ -37,17 +49,6 @@ except Exception as e:
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
-
-def log_error(error_msg: str, include_trace: bool = True):
-    """Helper function to log errors with optional stack trace"""
-    error_output = f"Error: {error_msg}"
-    if include_trace:
-        error_output += f"\nStack trace:\n{traceback.format_exc()}"
-    print(error_output, file=sys.stderr)
-
-def log_info(msg: str):
-    """Helper function for logging informational messages"""
-    print(msg, file=sys.stderr)
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from PDF with robust error handling"""
