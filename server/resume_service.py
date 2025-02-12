@@ -75,55 +75,89 @@ def log_info(msg: str):
     """Helper function for logging informational messages"""
     print(msg, file=sys.stderr)
 
-class RateLimiter:
-    """Implements a token bucket rate limiter with request tracking"""
-    def __init__(self, requests_per_minute=60):
-        self.requests_per_minute = requests_per_minute
-        self.bucket = requests_per_minute
-        self.last_refill = datetime.now()
-        self.refill_rate = requests_per_minute / 60.0  # tokens per second
-        self.last_request = datetime.now()
-        self.min_delay = 1.0  # Minimum delay between requests in seconds
+def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
+    """Process and analyze a resume with improved error handling and rate limiting."""
+    log_info("Starting resume analysis...")
 
-    def _refill_bucket(self):
-        now = datetime.now()
-        time_passed = (now - self.last_refill).total_seconds()
-        self.bucket = min(
-            self.requests_per_minute,
-            self.bucket + time_passed * self.refill_rate
-        )
-        self.last_refill = now
+    temp_file_path = save_uploaded_file(file_bytes, filename)
+    log_info(f"Saved file to {temp_file_path}")
 
-    def wait_if_needed(self):
-        """Wait if necessary to comply with rate limits"""
-        # Ensure minimum delay between requests
-        time_since_last = (datetime.now() - self.last_request).total_seconds()
-        if time_since_last < self.min_delay:
-            sleep_time = self.min_delay - time_since_last
-            log_info(f"Rate limiting: Waiting {sleep_time:.2f} seconds...")
-            time.sleep(sleep_time)
+    try:
+        # Extract text from PDF using our enhanced extraction method
+        try:
+            full_text = extract_text_from_pdf(temp_file_path)
+            log_info(f"Successfully extracted {len(full_text)} characters of text")
+        except Exception as e:
+            log_error(f"Failed to extract text from PDF: {str(e)}")
+            raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
 
-        # Check token bucket
-        self._refill_bucket()
-        while self.bucket < 1:
-            log_info("Rate limiting: Waiting for token bucket refill...")
-            time.sleep(0.1)  # Wait for tokens to refill
-            self._refill_bucket()
+        # Initialize Gemini with proper error handling
+        try:
+            genai.configure(api_key=GOOGLE_API_KEY)
+            model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
+            log_info("Successfully initialized Gemini model")
+        except Exception as e:
+            log_error(f"Failed to initialize Gemini: {str(e)}")
+            raise
 
-        self.bucket -= 1
-        self.last_request = datetime.now()
+        # Generate overview analysis with rate limiting
+        overview_analysis = generate_overview(full_text)
+        log_info("Generated overview analysis")
 
-# Initialize rate limiter with conservative limits
-rate_limiter = RateLimiter(requests_per_minute=30)  # Adjust based on API limits
+        # Define sections to analyze
+        sections = [
+            "Contact Information",
+            "Professional Summary",
+            "Work Experience",
+            "Skills",
+            "Education",
+            "Languages",
+            "Projects",
+            "Certifications"
+        ]
 
-# Initialize Gemini with proper error handling
-try:
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
-    log_info("Successfully initialized Gemini model")
-except Exception as e:
-    log_error(f"Failed to initialize Gemini: {str(e)}")
-    raise
+        # Analyze each section with proper rate limiting
+        section_results = []
+        for section in sections:
+            log_info(f"Analyzing section: {section}")
+            section_analysis = analyze_resume_section(full_text, section)
+            section_results.append({
+                "name": section,
+                **section_analysis
+            })
+
+        # Calculate overall score
+        overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
+
+        # Convert the results to a proper JSON format
+        results = {
+            "overview": overview_analysis.get("overview", ""),
+            "strengths": overview_analysis.get("strengths", []),
+            "weaknesses": overview_analysis.get("weaknesses", []),
+            "sections": section_results,
+            "overallScore": round(overall_score)
+        }
+
+        # Ensure the results can be properly serialized to JSON
+        json.dumps(results)  # This will raise an error if the structure isn't JSON-serializable
+
+        log_info("Analysis complete")
+        return results
+
+    except Exception as e:
+        log_error(f"Error during analysis: {str(e)}")
+        raise
+    finally:
+        # Cleanup
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+def save_uploaded_file(file_bytes: bytes, filename: str) -> str:
+    """Save the uploaded file to TMP_DIR."""
+    temp_file_path = os.path.join(TMP_DIR, filename)
+    with open(temp_file_path, "wb") as temp_file:
+        temp_file.write(file_bytes)
+    return temp_file_path
 
 def extract_json_response(text: str) -> Dict[str, Any]:
     """Helper function to extract JSON from response text"""
@@ -316,74 +350,46 @@ def validate_overview_result(result: Dict[str, Any]):
     if not all(key in result for key in required_fields):
         raise ValueError("Missing required fields in overview response")
 
-def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
-    """Process and analyze a resume with improved error handling and rate limiting."""
-    log_info("Starting resume analysis...")
+class RateLimiter:
+    """Implements a token bucket rate limiter with request tracking"""
+    def __init__(self, requests_per_minute=60):
+        self.requests_per_minute = requests_per_minute
+        self.bucket = requests_per_minute
+        self.last_refill = datetime.now()
+        self.refill_rate = requests_per_minute / 60.0  # tokens per second
+        self.last_request = datetime.now()
+        self.min_delay = 1.0  # Minimum delay between requests in seconds
 
-    temp_file_path = save_uploaded_file(file_bytes, filename)
-    log_info(f"Saved file to {temp_file_path}")
+    def _refill_bucket(self):
+        now = datetime.now()
+        time_passed = (now - self.last_refill).total_seconds()
+        self.bucket = min(
+            self.requests_per_minute,
+            self.bucket + time_passed * self.refill_rate
+        )
+        self.last_refill = now
 
-    try:
-        # Extract text from PDF using our enhanced extraction method
-        try:
-            full_text = extract_text_from_pdf(temp_file_path)
-            log_info(f"Successfully extracted {len(full_text)} characters of text")
-        except Exception as e:
-            log_error(f"Failed to extract text from PDF: {str(e)}")
-            raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
+    def wait_if_needed(self):
+        """Wait if necessary to comply with rate limits"""
+        # Ensure minimum delay between requests
+        time_since_last = (datetime.now() - self.last_request).total_seconds()
+        if time_since_last < self.min_delay:
+            sleep_time = self.min_delay - time_since_last
+            log_info(f"Rate limiting: Waiting {sleep_time:.2f} seconds...")
+            time.sleep(sleep_time)
 
-        # Generate overall analysis with rate limiting
-        overview_analysis = generate_overview(full_text)
-        log_info("Generated overview analysis")
+        # Check token bucket
+        self._refill_bucket()
+        while self.bucket < 1:
+            log_info("Rate limiting: Waiting for token bucket refill...")
+            time.sleep(0.1)  # Wait for tokens to refill
+            self._refill_bucket()
 
-        # Define sections to analyze
-        sections = [
-            "Contact Information",
-            "Professional Summary",
-            "Work Experience",
-            "Skills",
-            "Education",
-            "Languages",
-            "Projects",
-            "Certifications"
-        ]
+        self.bucket -= 1
+        self.last_request = datetime.now()
 
-        # Analyze each section with proper rate limiting
-        section_results = []
-        for section in sections:
-            log_info(f"Analyzing section: {section}")
-            section_analysis = analyze_resume_section(full_text, section)
-            section_results.append({
-                "name": section,
-                **section_analysis
-            })
-
-        # Calculate overall score
-        overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
-
-        results = {
-            **overview_analysis,
-            "sections": section_results,
-            "overallScore": round(overall_score)
-        }
-
-        log_info("Analysis complete")
-        return results
-
-    except Exception as e:
-        log_error(f"Error during analysis: {str(e)}")
-        raise
-    finally:
-        # Cleanup
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-
-def save_uploaded_file(file_bytes: bytes, filename: str) -> str:
-    """Save the uploaded file to TMP_DIR."""
-    temp_file_path = os.path.join(TMP_DIR, filename)
-    with open(temp_file_path, "wb") as temp_file:
-        temp_file.write(file_bytes)
-    return temp_file_path
+# Initialize rate limiter with conservative limits
+rate_limiter = RateLimiter(requests_per_minute=30)  # Adjust based on API limits
 
 if __name__ == "__main__":
     try:
@@ -395,6 +401,8 @@ if __name__ == "__main__":
 
         # Analyze the resume
         results = analyze_resume(file_bytes, filename)
+
+        # Ensure the results are JSON serializable before sending
         print(json.dumps(results))  # Send results back to Node.js
         sys.exit(0)
     except Exception as e:

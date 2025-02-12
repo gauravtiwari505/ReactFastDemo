@@ -40,47 +40,52 @@ async function ensureTablesExist() {
 
     // Define table schemas
     const analysesSchema = [
-      { name: 'id', type: 'STRING' },
-      { name: 'fileName', type: 'STRING' },
-      { name: 'uploadedAt', type: 'STRING' },
-      { name: 'status', type: 'STRING' },
-      { name: 'results', type: 'JSON' }
+      { name: 'id', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'fileName', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'uploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },
+      { name: 'status', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'results', type: 'STRING', mode: 'NULLABLE' }  // Changed from JSON to STRING to store serialized JSON
     ];
 
     const scoresSchema = [
-      { name: 'id', type: 'STRING' },
-      { name: 'analysisId', type: 'STRING' },
-      { name: 'sectionName', type: 'STRING' },
-      { name: 'score', type: 'INTEGER' },
-      { name: 'feedback', type: 'STRING' },
-      { name: 'suggestions', type: 'JSON' },
-      { name: 'timestamp', type: 'STRING' }
+      { name: 'id', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'analysisId', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'sectionName', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'score', type: 'INTEGER', mode: 'REQUIRED' },
+      { name: 'feedback', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }  // Changed from JSON to STRING to store serialized JSON
     ];
 
     const dataset = bigquery.dataset(datasetId);
 
-    // Create tables if they don't exist
-    try {
-      await dataset.createTable('resume_analyses', {
-        schema: analysesSchema
-      });
-      console.log('Created resume_analyses table');
-    } catch (error: any) {
-      if (error.code !== 409) { // 409 means table already exists
-        throw error;
+    // Drop and recreate tables to update schema
+    const tables = ['resume_analyses', 'resume_scores'];
+    for (const table of tables) {
+      try {
+        await dataset.table(table).delete();
+      } catch (error: any) {
+        // Ignore if table doesn't exist
+        if (error.code !== 404) {
+          console.warn(`Warning during table deletion: ${error.message}`);
+        }
       }
     }
 
-    try {
-      await dataset.createTable('resume_scores', {
-        schema: scoresSchema
-      });
-      console.log('Created resume_scores table');
-    } catch (error: any) {
-      if (error.code !== 409) {
-        throw error;
+    // Create tables with updated schema
+    await dataset.createTable('resume_analyses', {
+      schema: analysesSchema,
+      timePartitioning: {
+        type: 'DAY',
+        field: 'uploadedAt'
       }
-    }
+    });
+    console.log('Created resume_analyses table');
+
+    await dataset.createTable('resume_scores', {
+      schema: scoresSchema
+    });
+    console.log('Created resume_scores table');
+
   } catch (error) {
     console.error('Error setting up BigQuery:', error);
     throw error;
