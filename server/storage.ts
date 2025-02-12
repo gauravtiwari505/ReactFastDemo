@@ -34,30 +34,51 @@ export interface IStorage {
 
 export class BigQueryStorage implements IStorage {
   private async verifyTableAccess(tableName: string): Promise<void> {
+    console.log(`Verifying access to table: ${PROJECT_ID}.${DATASET}.${tableName}`);
     const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
-    await bigquery.query({ query });
+    try {
+      await bigquery.query({ query });
+      console.log(`Successfully verified access to ${tableName}`);
+    } catch (error) {
+      console.error(`Failed to verify access to ${tableName}:`, error);
+      throw error;
+    }
   }
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
+    console.log('Starting createAnalysis...');
     try {
       // Verify table access first
       await this.verifyTableAccess('resume_analyses');
 
       const timestamp = new Date().toISOString();
       const id = Date.now().toString();
+      console.log('Generated ID:', id);
 
+      // Prepare row data
       const row = {
         id,
         fileName: insertAnalysis.fileName,
         uploadedAt: timestamp,
         status: insertAnalysis.status,
-        results: JSON.stringify(insertAnalysis.results || {})
+        results: '{}'  // Initialize with empty JSON object
       };
 
-      // Insert the row
-      const table = bigquery.dataset(DATASET).table('resume_analyses');
-      await table.insert([row]);
-      console.log('Successfully inserted row into resume_analyses');
+      console.log('Attempting to insert row:', JSON.stringify(row));
+
+      // Insert using direct SQL to ensure consistency
+      const insertQuery = `
+        INSERT INTO \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+        (id, fileName, uploadedAt, status, results)
+        VALUES(@id, @fileName, @uploadedAt, @status, @results)
+      `;
+
+      await bigquery.query({
+        query: insertQuery,
+        params: row
+      });
+
+      console.log('Successfully inserted row');
 
       // Fetch the inserted row
       const [result] = await bigquery.query({
@@ -73,14 +94,15 @@ export class BigQueryStorage implements IStorage {
         throw new Error('Failed to retrieve inserted record');
       }
 
-      // Parse the results JSON
+      console.log('Successfully retrieved inserted record');
+
       return {
         ...result[0],
-        results: result[0].results ? JSON.parse(result[0].results) : {}
+        results: {}
       } as ResumeAnalysis;
     } catch (error) {
       console.error('Error in createAnalysis:', error);
-      throw new Error('Failed to create analysis record');
+      throw new Error(`Failed to create analysis record: ${error.message}`);
     }
   }
 
