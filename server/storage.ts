@@ -1,4 +1,4 @@
-import { BigQuery } from '@google-cloud/bigquery';
+import { bigquery } from "./db";
 import type { 
   ResumeAnalysis, 
   InsertAnalysis, 
@@ -6,13 +6,8 @@ import type {
   InsertScore 
 } from "@shared/schema";
 
-// Initialize BigQuery client
-const bigquery = new BigQuery({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT,
-  credentials: JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}'),
-});
-
-// Dataset configuration
+// Get project ID from environment
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
 const DATASET = 'gigflick';
 
 export interface IStorage {
@@ -33,33 +28,35 @@ export interface IStorage {
 
 export class BigQueryStorage implements IStorage {
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
-    const [job] = await bigquery
+    const table = bigquery
       .dataset(DATASET)
-      .table('resume_analysis')
-      .insert([{
-        ...insertAnalysis,
-        timestamp: new Date().toISOString()
-      }]);
+      .table('resume_analyses');
 
-    const [rows] = await bigquery.query({
+    const rows = [{
+      ...insertAnalysis,
+      id: Date.now().toString()
+    }];
+
+    await table.insert(rows);
+
+    // Return the inserted row
+    const [result] = await bigquery.query({
       query: `
         SELECT *
-        FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_analysis\`
-        WHERE document_id = @documentId
-        ORDER BY timestamp DESC
-        LIMIT 1
+        FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+        WHERE id = @id
       `,
-      params: { documentId: insertAnalysis.document_id }
+      params: { id: rows[0].id }
     });
 
-    return rows[0] as ResumeAnalysis;
+    return result[0] as ResumeAnalysis;
   }
 
   async getAnalysis(id: string): Promise<ResumeAnalysis | undefined> {
     const [rows] = await bigquery.query({
       query: `
         SELECT *
-        FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_analysis\`
+        FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
         WHERE id = @id
       `,
       params: { id }
@@ -70,52 +67,44 @@ export class BigQueryStorage implements IStorage {
 
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
     const setClause = Object.entries(update)
-      .map(([key]) => `${key} = @${key}`)
+      .map(([key, _]) => `${key} = @${key}`)
       .join(', ');
 
     await bigquery.query({
       query: `
-        UPDATE \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_analysis\`
+        UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
         SET ${setClause}
         WHERE id = @id
       `,
-      params: { id, ...update }
+      params: { ...update, id }
     });
 
-    const [rows] = await bigquery.query({
-      query: `
-        SELECT *
-        FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_analysis\`
-        WHERE id = @id
-      `,
-      params: { id }
-    });
-
-    return rows[0] as ResumeAnalysis;
+    return this.getAnalysis(id) as Promise<ResumeAnalysis>;
   }
 
   async createScore(insertScore: InsertScore): Promise<ResumeScore> {
-    const [job] = await bigquery
+    const table = bigquery
       .dataset(DATASET)
-      .table('resume_scores')
-      .insert([insertScore]);
+      .table('resume_scores');
 
-    const [rows] = await bigquery.query({
+    const rows = [{
+      ...insertScore,
+      id: Date.now().toString()
+    }];
+
+    await table.insert(rows);
+
+    // Return the inserted row
+    const [result] = await bigquery.query({
       query: `
         SELECT *
-        FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_scores\`
-        WHERE analysis_id = @analysisId
-        AND section_name = @sectionName
-        ORDER BY timestamp DESC
-        LIMIT 1
+        FROM \`${PROJECT_ID}.${DATASET}.resume_scores\`
+        WHERE id = @id
       `,
-      params: { 
-        analysisId: insertScore.analysis_id,
-        sectionName: insertScore.section_name
-      }
+      params: { id: rows[0].id }
     });
 
-    return rows[0] as ResumeScore;
+    return result[0] as ResumeScore;
   }
 
   async getAnalytics() {
@@ -123,42 +112,42 @@ export class BigQueryStorage implements IStorage {
       query: `
         WITH ScoreStats AS (
           SELECT
-            COUNT(DISTINCT a.id) as total_resumes,
-            AVG(s.score) as average_score
-          FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_analysis\` a
-          LEFT JOIN \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_scores\` s 
-          ON a.id = s.analysis_id
+            COUNT(DISTINCT a.id) as totalResumes,
+            AVG(s.score) as averageScore
+          FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\` a
+          LEFT JOIN \`${PROJECT_ID}.${DATASET}.resume_scores\` s ON a.id = s.analysisId
         ),
         SectionStats AS (
           SELECT
-            section_name,
-            AVG(score) as average_score,
-            COUNT(*) as total_analyses
-          FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.${DATASET}.resume_scores\`
-          GROUP BY section_name
+            sectionName,
+            AVG(score) as averageScore,
+            COUNT(*) as totalAnalyses
+          FROM \`${PROJECT_ID}.${DATASET}.resume_scores\`
+          GROUP BY sectionName
         )
         SELECT
-          s.total_resumes,
-          s.average_score,
+          s.totalResumes,
+          s.averageScore,
           ARRAY_AGG(STRUCT(
-            ss.section_name as sectionName,
-            ss.average_score as averageScore,
-            ss.total_analyses as totalAnalyses
-          )) as section_averages
+            ss.sectionName,
+            ss.averageScore,
+            ss.totalAnalyses
+          )) as sectionAverages
         FROM ScoreStats s
         CROSS JOIN SectionStats ss
-        GROUP BY s.total_resumes, s.average_score
+        GROUP BY s.totalResumes, s.averageScore
       `
     });
 
     const result = rows[0];
+
     return {
-      totalResumes: Number(result?.total_resumes || 0),
-      averageScore: Number(result?.average_score || 0),
-      sectionAverages: (result?.section_averages || []).map((section: any) => ({
+      totalResumes: Number(result?.totalResumes || 0),
+      averageScore: Number(result?.averageScore || 0),
+      sectionAverages: (result?.sectionAverages || []).map((section: any) => ({
         sectionName: section.sectionName,
         averageScore: Number(section.averageScore || 0),
-        totalAnalyses: Number(section.totalAnalyses || 0)
+        totalAnalyses: Number(section.totalAnalyses || 0),
       }))
     };
   }

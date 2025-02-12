@@ -6,7 +6,7 @@ import type { FileFilterCallback } from "multer";
 import type { Request } from "express";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
-import { analyzeResume, getResumeAnalysis, saveResumeScore } from "./services/resume_service";
+import { spawn } from "child_process";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -82,6 +82,41 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
   });
 }
 
+async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const pythonProcess = spawn("python", ["server/resume_service.py"]);
+
+    let resultData = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      resultData += data.toString();
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      console.error(`Python Error: ${data}`);
+    });
+
+    pythonProcess.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python process exited with code ${code}`));
+        return;
+      }
+      try {
+        const results = JSON.parse(resultData);
+        resolve(results);
+      } catch (err) {
+        reject(new Error("Failed to parse Python output"));
+      }
+    });
+
+    pythonProcess.stdin.write(JSON.stringify({
+      file_bytes: fileBuffer.toString("base64"),
+      filename: filename
+    }));
+    pythonProcess.stdin.end();
+  });
+}
+
 export function registerRoutes(app: Express): Server {
   app.post("/api/analyze", upload.single("resume"), async (req, res) => {
     const file = req.file as Express.Multer.File | undefined;
@@ -90,27 +125,36 @@ export function registerRoutes(app: Express): Server {
     }
 
     try {
-      // Process the resume using our TypeScript service
-      const analysis = await analyzeResume(file.originalname);
+      const analysis = await storage.createAnalysis({
+        fileName: file.originalname,
+        uploadedAt: new Date().toISOString(),
+        status: "processing"
+      });
 
-      // Store default section scores
-      const defaultSections = [
-        { name: "Format", score: 80, feedback: "Good formatting" },
-        { name: "Content", score: 85, feedback: "Strong content" },
-        { name: "Skills", score: 90, feedback: "Relevant skills" }
-      ];
+      // Process the PDF using our Python service
+      const results = await analyzePDF(file.buffer, file.originalname);
 
-      // Save section scores
-      for (const section of defaultSections) {
-        await saveResumeScore({
-          analysisId: analysis.id,
-          sectionName: section.name,
-          score: section.score,
-          feedback: section.feedback
-        });
+      // Update analysis with results
+      const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
+        status: "completed",
+        results: results
+      });
+
+      // Store section scores
+      if (results.sections) {
+        for (const section of results.sections) {
+          await storage.createScore({
+            analysisId: analysis.id,
+            sectionName: section.name,
+            score: section.score,
+            feedback: section.content,
+            suggestions: section.suggestions,
+            timestamp: new Date().toISOString()
+          });
+        }
       }
 
-      res.json(analysis);
+      res.json(updatedAnalysis);
     } catch (error) {
       console.error("Analysis error:", error);
       res.status(500).json({ message: "Failed to analyze resume" });
@@ -118,22 +162,17 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.get("/api/analysis/:id", async (req, res) => {
-    try {
-      const analysis = await getResumeAnalysis(req.params.id);
-      if (!analysis) {
-        return res.status(404).json({ message: "Analysis not found" });
-      }
-      res.json(analysis);
-    } catch (error) {
-      console.error("Error fetching analysis:", error);
-      res.status(500).json({ message: "Failed to fetch analysis" });
+    const analysis = await storage.getAnalysis(req.params.id);
+    if (!analysis) {
+      return res.status(404).json({ message: "Analysis not found" });
     }
+    res.json(analysis);
   });
 
   app.post("/api/analysis/:id/send-pdf", async (req, res) => {
     try {
       const { email } = req.body;
-      const analysis = await getResumeAnalysis(req.params.id);
+      const analysis = await storage.getAnalysis(req.params.id);
 
       if (!analysis) {
         return res.status(404).json({ message: "Analysis not found" });

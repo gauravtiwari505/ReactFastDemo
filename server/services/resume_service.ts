@@ -1,71 +1,82 @@
+import { BigQuery } from '@google-cloud/bigquery';
 import { randomUUID } from 'crypto';
-import dotenv from 'dotenv';
-import { z } from 'zod';
-import { storage } from '../storage';
 
-// Load environment variables
-dotenv.config();
-
-// Schema validation
-export const resumeAnalysisSchema = z.object({
-  id: z.string(),
-  candidateName: z.string(),
-  score: z.number().min(0).max(100),
-  feedback: z.string(),
-  timestamp: z.string()
+const bigquery = new BigQuery({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT,
+  credentials: JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}'),
 });
 
-export const resumeScoreSchema = z.object({
-  id: z.string(),
-  analysisId: z.string(),
-  sectionName: z.string(),
-  score: z.number().min(0).max(100),
-  feedback: z.string()
-});
+export interface ResumeAnalysis {
+  id: string;
+  candidateName: string;
+  score: number;
+  feedback: string;
+  timestamp: string;
+}
 
-export type ResumeAnalysis = z.infer<typeof resumeAnalysisSchema>;
-export type ResumeScore = z.infer<typeof resumeScoreSchema>;
-
+export interface ResumeScore {
+  id: string;
+  analysisId: string;
+  sectionName: string;
+  score: number;
+  feedback: string;
+}
 
 export async function analyzeResume(documentId: string): Promise<ResumeAnalysis> {
-  try {
-    const analysis = await storage.createAnalysis({
-      document_id: documentId,
-      candidate_name: "Test Candidate",
-      score: 85,
-      feedback: "Good resume overall"
-    });
+  const analysisId = randomUUID();
+  const timestamp = new Date().toISOString();
 
-    return resumeAnalysisSchema.parse(analysis);
-  } catch (error) {
-    console.error('Error analyzing resume:', error);
-    throw new Error('Failed to analyze resume');
-  }
+  // Insert analysis record into BigQuery
+  const analysisQuery = `
+    INSERT INTO \`${process.env.GOOGLE_CLOUD_PROJECT}.gigflick.resume_analysis\`
+    (id, document_id, candidate_name, score, feedback, timestamp)
+    VALUES(?, ?, ?, ?, ?, ?)
+  `;
+  
+  await bigquery.query({
+    query: analysisQuery,
+    params: [analysisId, documentId, "Test Candidate", 85, "Good resume overall", timestamp]
+  });
+
+  return {
+    id: analysisId,
+    candidateName: "Test Candidate",
+    score: 85,
+    feedback: "Good resume overall",
+    timestamp
+  };
 }
 
 export async function getResumeAnalysis(analysisId: string): Promise<ResumeAnalysis | null> {
-  try {
-    const analysis = await storage.getAnalysis(analysisId);
-    if (!analysis) return null;
-    return resumeAnalysisSchema.parse(analysis);
-  } catch (error) {
-    console.error('Error getting resume analysis:', error);
-    throw new Error('Failed to get resume analysis');
-  }
+  const query = `
+    SELECT id, candidate_name as candidateName, score, feedback, timestamp
+    FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.gigflick.resume_analysis\`
+    WHERE id = ?
+  `;
+
+  const [rows] = await bigquery.query({
+    query,
+    params: [analysisId]
+  });
+
+  return rows[0] || null;
 }
 
 export async function saveResumeScore(score: Omit<ResumeScore, "id">): Promise<ResumeScore> {
-  try {
-    const savedScore = await storage.createScore({
-      analysis_id: score.analysisId,
-      section_name: score.sectionName,
-      score: score.score,
-      feedback: score.feedback
-    });
+  const id = randomUUID();
+  const scoreQuery = `
+    INSERT INTO \`${process.env.GOOGLE_CLOUD_PROJECT}.gigflick.resume_scores\`
+    (id, analysis_id, section_name, score, feedback)
+    VALUES(?, ?, ?, ?, ?)
+  `;
 
-    return resumeScoreSchema.parse(savedScore);
-  } catch (error) {
-    console.error('Error saving resume score:', error);
-    throw new Error('Failed to save resume score');
-  }
+  await bigquery.query({
+    query: scoreQuery,
+    params: [id, score.analysisId, score.sectionName, score.score, score.feedback]
+  });
+
+  return {
+    id,
+    ...score
+  };
 }
