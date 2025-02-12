@@ -27,6 +27,8 @@ export const bigquery = new BigQuery({
 // Create dataset and tables if they don't exist
 async function ensureTablesExist() {
   const datasetId = 'gigflick';
+  const retryDelay = 2000; // 2 seconds delay between retries
+  const maxRetries = 3;
 
   try {
     // Create dataset if it doesn't exist
@@ -36,6 +38,8 @@ async function ensureTablesExist() {
     if (!datasetExists) {
       await bigquery.createDataset(datasetId);
       console.log('Created dataset:', datasetId);
+      // Wait a bit after dataset creation
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
 
     // Define table schemas
@@ -44,7 +48,7 @@ async function ensureTablesExist() {
       { name: 'fileName', type: 'STRING', mode: 'REQUIRED' },
       { name: 'uploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },
       { name: 'status', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'results', type: 'STRING', mode: 'NULLABLE' }  // Changed from JSON to STRING to store serialized JSON
+      { name: 'results', type: 'STRING', mode: 'NULLABLE' }  // Store JSON as STRING
     ];
 
     const scoresSchema = [
@@ -53,38 +57,59 @@ async function ensureTablesExist() {
       { name: 'sectionName', type: 'STRING', mode: 'REQUIRED' },
       { name: 'score', type: 'INTEGER', mode: 'REQUIRED' },
       { name: 'feedback', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }  // Changed from JSON to STRING to store serialized JSON
+      { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }  // Store JSON as STRING
     ];
 
     const dataset = bigquery.dataset(datasetId);
 
-    // Drop and recreate tables to update schema
-    const tables = ['resume_analyses', 'resume_scores'];
-    for (const table of tables) {
-      try {
-        await dataset.table(table).delete();
-      } catch (error: any) {
-        // Ignore if table doesn't exist
-        if (error.code !== 404) {
-          console.warn(`Warning during table deletion: ${error.message}`);
+    // Helper function to create table with retries
+    async function createTableWithRetry(tableName: string, schema: any, timePartitioning?: any) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // Delete existing table if it exists
+          try {
+            await dataset.table(tableName).delete();
+            console.log(`Deleted existing table: ${tableName}`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+          } catch (error: any) {
+            if (error.code !== 404) {
+              console.warn(`Warning during table deletion: ${error.message}`);
+            }
+          }
+
+          // Create new table
+          const tableOptions = {
+            schema,
+            ...(timePartitioning && { timePartitioning })
+          };
+
+          await dataset.createTable(tableName, tableOptions);
+          console.log(`Created table: ${tableName}`);
+
+          // Verify table exists
+          const [tableExists] = await dataset.table(tableName).exists();
+          if (!tableExists) {
+            throw new Error(`Table ${tableName} was not created successfully`);
+          }
+
+          // Wait after successful creation
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          return;
+        } catch (error: any) {
+          console.warn(`Attempt ${attempt} failed for ${tableName}: ${error.message}`);
+          if (attempt === maxRetries) throw error;
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
     }
 
-    // Create tables with updated schema
-    await dataset.createTable('resume_analyses', {
-      schema: analysesSchema,
-      timePartitioning: {
-        type: 'DAY',
-        field: 'uploadedAt'
-      }
+    // Create tables with retries
+    await createTableWithRetry('resume_analyses', analysesSchema, {
+      type: 'DAY',
+      field: 'uploadedAt'
     });
-    console.log('Created resume_analyses table');
 
-    await dataset.createTable('resume_scores', {
-      schema: scoresSchema
-    });
-    console.log('Created resume_scores table');
+    await createTableWithRetry('resume_scores', scoresSchema);
 
   } catch (error) {
     console.error('Error setting up BigQuery:', error);
