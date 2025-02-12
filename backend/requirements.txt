@@ -1,12 +1,11 @@
 fastapi
 uvicorn
-pdfkit
-langchain
-google-generativeai
-langchain_openai
-langchain_google_genai
-openai
-pydantic
-python-dotenv
 python-multipart
+python-dotenv
+
+# PDF Processing
+pdfkit
 pypdf
+
+# Email functionality
+pydantic
