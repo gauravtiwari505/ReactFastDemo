@@ -22,7 +22,7 @@ export const resumeAnalysisSchema = z.object({
 
 export const resumeScoreSchema = z.object({
   id: z.string(),
-  analysisId: z.string(),
+  analysisId: z.string(), 
   sectionName: z.string(),
   score: z.number(),
   feedback: z.string(),

@@ -2,14 +2,15 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
-import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
-import { spawn } from "child_process";
+import type { FileFilterCallback } from "multer";
+import type { Request } from "express";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
+import { spawn } from "child_process";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     if (file.mimetype === "application/pdf") {
       cb(null, true);
     } else {
@@ -22,7 +23,7 @@ const upload = multer({
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'gaurav@metalytics.uk',
+    user: process.env.GMAIL_USER || 'gaurav@metalytics.uk',
     pass: process.env.GMAIL_APP_PASSWORD
   }
 });
@@ -118,19 +119,20 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
 export function registerRoutes(app: Express): Server {
   app.post("/api/analyze", upload.single("resume"), async (req, res) => {
-    if (!req.file) {
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
       return res.status(400).json({ message: "No PDF file provided" });
     }
 
     try {
       const analysis = await storage.createAnalysis({
-        fileName: req.file.originalname,
+        fileName: file.originalname,
         uploadedAt: new Date().toISOString(),
         status: "processing"
       });
 
       // Process the PDF using our Python service
-      const results = await analyzePDF(req.file.buffer, req.file.originalname);
+      const results = await analyzePDF(file.buffer, file.originalname);
 
       // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
@@ -181,7 +183,7 @@ export function registerRoutes(app: Express): Server {
 
       // Send email with PDF attachment
       await transporter.sendMail({
-        from: 'gaurav@metalytics.uk',
+        from: process.env.GMAIL_USER || 'gaurav@metalytics.uk',
         to: email,
         subject: 'Your Resume Analysis Report',
         text: 'Please find attached your resume analysis report from GigFlick.',
