@@ -10,6 +10,10 @@ import type {
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
 const DATASET = 'gigflick';
 
+// Get numeric project ID from credentials
+const credentials = JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}');
+const NUMERIC_PROJECT_ID = credentials.project_id || PROJECT_ID;
+
 export interface IStorage {
   createAnalysis(analysis: InsertAnalysis): Promise<ResumeAnalysis>;
   getAnalysis(id: string): Promise<ResumeAnalysis | undefined>;
@@ -43,6 +47,7 @@ export class BigQueryStorage implements IStorage {
 
     try {
       await table.insert(rows);
+      console.log('Successfully inserted row into resume_analyses');
 
       // Return the inserted row
       const [result] = await bigquery.query({
@@ -52,16 +57,20 @@ export class BigQueryStorage implements IStorage {
             fileName,
             uploadedAt,
             status,
-            PARSE_JSON(results) as results
-          FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+            results
+          FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
         `,
         params: { id: rows[0].id }
       });
 
+      if (!result || !result[0]) {
+        throw new Error('Failed to retrieve inserted record');
+      }
+
       return {
         ...result[0],
-        results: JSON.parse(result[0].results || '{}')
+        results: result[0].results ? JSON.parse(result[0].results) : {}
       } as ResumeAnalysis;
     } catch (error) {
       console.error('Error in createAnalysis:', error);
@@ -78,8 +87,8 @@ export class BigQueryStorage implements IStorage {
             fileName,
             uploadedAt,
             status,
-            PARSE_JSON(results) as results
-          FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+            results
+          FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
         `,
         params: { id }
@@ -89,7 +98,7 @@ export class BigQueryStorage implements IStorage {
 
       return {
         ...rows[0],
-        results: JSON.parse(rows[0].results || '{}')
+        results: rows[0].results ? JSON.parse(rows[0].results) : {}
       } as ResumeAnalysis;
     } catch (error) {
       console.error('Error in getAnalysis:', error);
@@ -99,7 +108,6 @@ export class BigQueryStorage implements IStorage {
 
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
     try {
-      // Convert any JSON fields to strings for storage
       const updateData = {
         ...update,
         results: update.results ? JSON.stringify(update.results) : undefined
@@ -112,7 +120,7 @@ export class BigQueryStorage implements IStorage {
 
       await bigquery.query({
         query: `
-          UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+          UPDATE \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\`
           SET ${setClause}
           WHERE id = @id
         `,
@@ -134,15 +142,15 @@ export class BigQueryStorage implements IStorage {
     const rows = [{
       ...insertScore,
       id: Date.now().toString(),
-      suggestions: typeof insertScore.suggestions === 'object'
+      suggestions: Array.isArray(insertScore.suggestions)
         ? JSON.stringify(insertScore.suggestions)
         : insertScore.suggestions
     }];
 
     try {
       await table.insert(rows);
+      console.log('Successfully inserted row into resume_scores');
 
-      // Return the inserted row
       const [result] = await bigquery.query({
         query: `
           SELECT 
@@ -151,16 +159,20 @@ export class BigQueryStorage implements IStorage {
             sectionName,
             score,
             feedback,
-            PARSE_JSON(suggestions) as suggestions
-          FROM \`${PROJECT_ID}.${DATASET}.resume_scores\`
+            suggestions
+          FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\`
           WHERE id = @id
         `,
         params: { id: rows[0].id }
       });
 
+      if (!result || !result[0]) {
+        throw new Error('Failed to retrieve inserted score record');
+      }
+
       return {
         ...result[0],
-        suggestions: JSON.parse(result[0].suggestions || '[]')
+        suggestions: result[0].suggestions ? JSON.parse(result[0].suggestions) : []
       } as ResumeScore;
     } catch (error) {
       console.error('Error in createScore:', error);
@@ -176,15 +188,15 @@ export class BigQueryStorage implements IStorage {
             SELECT
               COUNT(DISTINCT a.id) as totalResumes,
               AVG(s.score) as averageScore
-            FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\` a
-            LEFT JOIN \`${PROJECT_ID}.${DATASET}.resume_scores\` s ON a.id = s.analysisId
+            FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_analyses\` a
+            LEFT JOIN \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\` s ON a.id = s.analysisId
           ),
           SectionStats AS (
             SELECT
               sectionName,
               AVG(score) as averageScore,
               COUNT(*) as totalAnalyses
-            FROM \`${PROJECT_ID}.${DATASET}.resume_scores\`
+            FROM \`${NUMERIC_PROJECT_ID}.${DATASET}.resume_scores\`
             GROUP BY sectionName
           )
           SELECT

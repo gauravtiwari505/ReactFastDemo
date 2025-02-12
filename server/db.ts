@@ -19,10 +19,14 @@ try {
   throw new Error("Invalid BIGQUERY_CREDENTIALS JSON format in environment variables");
 }
 
+// Initialize BigQuery with both numeric and string project IDs
 export const bigquery = new BigQuery({
   projectId: GOOGLE_CLOUD_PROJECT,
   credentials
 });
+
+// Get the numeric project ID from credentials
+const numericProjectId = credentials.project_id;
 
 // Create dataset and tables if they don't exist
 async function ensureTablesExist() {
@@ -92,6 +96,12 @@ async function ensureTablesExist() {
             throw new Error(`Table ${tableName} was not created successfully`);
           }
 
+          // Double verify by trying to query the table
+          await bigquery.query({
+            query: `SELECT 1 FROM \`${numericProjectId}.${datasetId}.${tableName}\` LIMIT 1`
+          });
+
+          console.log(`Verified table ${tableName} exists and is queryable`);
           // Wait after successful creation
           await new Promise(resolve => setTimeout(resolve, retryDelay));
           return;
