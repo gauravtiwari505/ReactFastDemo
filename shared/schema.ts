@@ -34,15 +34,6 @@ export const resumeScoreSchema = z.object({
 export type ResumeAnalysis = z.infer<typeof resumeAnalysisSchema>;
 export type ResumeScore = z.infer<typeof resumeScoreSchema>;
 
-// Insert schemas (without auto-generated fields)
-export const insertAnalysisSchema = resumeAnalysisSchema.omit({ 
-  id: true,
-  results: true 
-});
-
-export const insertScoreSchema = resumeScoreSchema.omit({ 
-  id: true 
-});
-
-export type InsertAnalysis = z.infer<typeof insertAnalysisSchema>;
-export type InsertScore = z.infer<typeof insertScoreSchema>;
+// Insert types without auto-generated fields
+export type InsertAnalysis = Omit<ResumeAnalysis, 'id' | 'results'>;
+export type InsertScore = Omit<ResumeScore, 'id'>;
