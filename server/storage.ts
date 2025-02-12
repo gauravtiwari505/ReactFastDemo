@@ -1,12 +1,18 @@
-import { resumeAnalyses, resumeScores, type Analysis, type InsertAnalysis, type Score, type InsertScore } from "@shared/schema";
-import { db } from "./db";
-import { eq, avg, count } from "drizzle-orm";
+import { bigquery } from "./db";
+import type { 
+  ResumeAnalysis, 
+  InsertAnalysis, 
+  ResumeScore, 
+  InsertScore 
+} from "@shared/schema";
+
+const DATASET = 'gigflick';
 
 export interface IStorage {
-  createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
-  getAnalysis(id: number): Promise<Analysis | undefined>;
-  updateAnalysis(id: number, analysis: Partial<Analysis>): Promise<Analysis>;
-  createScore(score: InsertScore): Promise<Score>;
+  createAnalysis(analysis: InsertAnalysis): Promise<ResumeAnalysis>;
+  getAnalysis(id: string): Promise<ResumeAnalysis | undefined>;
+  updateAnalysis(id: string, analysis: Partial<ResumeAnalysis>): Promise<ResumeAnalysis>;
+  createScore(score: InsertScore): Promise<ResumeScore>;
   getAnalytics(): Promise<{
     totalResumes: number;
     averageScore: number;
@@ -18,69 +24,104 @@ export interface IStorage {
   }>;
 }
 
-export class DatabaseStorage implements IStorage {
-  async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
-    const [analysis] = await db
-      .insert(resumeAnalyses)
-      .values(insertAnalysis)
-      .returning();
-    return analysis;
+export class BigQueryStorage implements IStorage {
+  async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
+    const [job] = await bigquery
+      .dataset(DATASET)
+      .table('resume_analyses')
+      .insert([{
+        ...insertAnalysis,
+        id: Date.now().toString()
+      }]);
+
+    const [analysis] = await job.getQueryResults();
+    return analysis as ResumeAnalysis;
   }
 
-  async getAnalysis(id: number): Promise<Analysis | undefined> {
-    const [analysis] = await db
-      .select()
-      .from(resumeAnalyses)
-      .where(eq(resumeAnalyses.id, id));
-    return analysis;
+  async getAnalysis(id: string): Promise<ResumeAnalysis | undefined> {
+    const query = `
+      SELECT *
+      FROM ${DATASET}.resume_analyses
+      WHERE id = @id
+    `;
+
+    const options = {
+      query,
+      params: { id }
+    };
+
+    const [rows] = await bigquery.query(options);
+    return rows[0] as ResumeAnalysis | undefined;
   }
 
-  async updateAnalysis(id: number, update: Partial<Analysis>): Promise<Analysis> {
-    const [analysis] = await db
-      .update(resumeAnalyses)
-      .set(update)
-      .where(eq(resumeAnalyses.id, id))
-      .returning();
+  async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
+    const query = `
+      UPDATE ${DATASET}.resume_analyses
+      SET ${Object.entries(update)
+        .map(([key, _]) => `${key} = @${key}`)
+        .join(', ')}
+      WHERE id = @id
+    `;
 
-    if (!analysis) {
-      throw new Error("Analysis not found");
-    }
+    const options = {
+      query,
+      params: { ...update, id }
+    };
 
-    return analysis;
+    await bigquery.query(options);
+    return this.getAnalysis(id) as Promise<ResumeAnalysis>;
   }
 
-  async createScore(insertScore: InsertScore): Promise<Score> {
-    const [score] = await db
-      .insert(resumeScores)
-      .values(insertScore)
-      .returning();
-    return score;
+  async createScore(insertScore: InsertScore): Promise<ResumeScore> {
+    const [job] = await bigquery
+      .dataset(DATASET)
+      .table('resume_scores')
+      .insert([{
+        ...insertScore,
+        id: Date.now().toString()
+      }]);
+
+    const [score] = await job.getQueryResults();
+    return score as ResumeScore;
   }
 
   async getAnalytics() {
-    // Get total number of resumes and average overall score
-    const [totals] = await db
-      .select({
-        totalResumes: count(resumeAnalyses.id),
-        averageScore: avg(resumeScores.score),
-      })
-      .from(resumeAnalyses)
-      .leftJoin(resumeScores, eq(resumeAnalyses.id, resumeScores.analysisId));
+    const query = `
+      WITH ScoreStats AS (
+        SELECT
+          COUNT(DISTINCT a.id) as totalResumes,
+          AVG(s.score) as averageScore
+        FROM ${DATASET}.resume_analyses a
+        LEFT JOIN ${DATASET}.resume_scores s ON a.id = s.analysisId
+      ),
+      SectionStats AS (
+        SELECT
+          sectionName,
+          AVG(score) as averageScore,
+          COUNT(*) as totalAnalyses
+        FROM ${DATASET}.resume_scores
+        GROUP BY sectionName
+      )
+      SELECT
+        s.totalResumes,
+        s.averageScore,
+        ARRAY_AGG(STRUCT(
+          ss.sectionName,
+          ss.averageScore,
+          ss.totalAnalyses
+        )) as sectionAverages
+      FROM ScoreStats s
+      CROSS JOIN SectionStats ss
+      GROUP BY s.totalResumes, s.averageScore
+    `;
 
-    // Get average scores by section
-    const sectionAverages = await db
-      .select({
-        sectionName: resumeScores.sectionName,
-        averageScore: avg(resumeScores.score),
-        totalAnalyses: count(resumeScores.id),
-      })
-      .from(resumeScores)
-      .groupBy(resumeScores.sectionName);
+    const [rows] = await bigquery.query({ query });
+    const result = rows[0];
 
     return {
-      totalResumes: Number(totals?.totalResumes || 0),
-      averageScore: Number(totals?.averageScore || 0),
-      sectionAverages: sectionAverages.map(section => ({
+      totalResumes: Number(result.totalResumes || 0),
+      averageScore: Number(result.averageScore || 0),
+      sectionAverages: result.sectionAverages.map((section: any) => ({
         sectionName: section.sectionName,
         averageScore: Number(section.averageScore || 0),
         totalAnalyses: Number(section.totalAnalyses || 0),
@@ -89,4 +130,4 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new BigQueryStorage();

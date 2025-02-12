@@ -4,7 +4,6 @@ import { storage } from "./storage";
 import multer from "multer";
 import { insertAnalysisSchema, insertScoreSchema } from "@shared/schema";
 import { spawn } from "child_process";
-import path from "path";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 
@@ -33,7 +32,6 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
     const chunks: Buffer[] = [];
     const doc = new PDFDocument();
 
-    // Collect the PDF data
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
@@ -42,51 +40,50 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
     doc.fontSize(24).text('Resume Analysis Report', { align: 'center' });
     doc.moveDown();
 
-    // Overview section
-    doc.fontSize(18).text('Overview');
-    doc.fontSize(12).text(analysis.results.overview);
-    doc.moveDown();
-
-    // Overall Score
-    doc.fontSize(18).text(`Overall Score: ${analysis.results.overallScore}%`);
-    doc.moveDown();
-
-    // Key Strengths
-    doc.fontSize(18).text('Key Strengths');
-    analysis.results.strengths.forEach((strength: string) => {
-      doc.fontSize(12).text(`• ${strength}`);
-    });
-    doc.moveDown();
-
-    // Areas for Improvement
-    doc.fontSize(18).text('Areas for Improvement');
-    analysis.results.weaknesses.forEach((weakness: string) => {
-      doc.fontSize(12).text(`• ${weakness}`);
-    });
-    doc.moveDown();
-
-    // Detailed Section Analysis
-    doc.fontSize(18).text('Detailed Section Analysis');
-    analysis.results.sections.forEach((section: any) => {
+    if (analysis.results) {
+      // Overview section
+      doc.fontSize(18).text('Overview');
+      doc.fontSize(12).text(analysis.results.overview);
       doc.moveDown();
-      doc.fontSize(14).text(`${section.name} - Score: ${section.score}%`);
-      doc.fontSize(12).text(section.content);
-      doc.fontSize(12).text('Suggestions:');
-      section.suggestions.forEach((suggestion: string) => {
-        doc.text(`• ${suggestion}`);
-      });
-    });
 
-    // Finalize the PDF
+      // Overall Score
+      doc.fontSize(18).text(`Overall Score: ${analysis.results.overallScore}%`);
+      doc.moveDown();
+
+      // Key Strengths
+      doc.fontSize(18).text('Key Strengths');
+      analysis.results.strengths.forEach((strength: string) => {
+        doc.fontSize(12).text(`• ${strength}`);
+      });
+      doc.moveDown();
+
+      // Areas for Improvement
+      doc.fontSize(18).text('Areas for Improvement');
+      analysis.results.weaknesses.forEach((weakness: string) => {
+        doc.fontSize(12).text(`• ${weakness}`);
+      });
+      doc.moveDown();
+
+      // Detailed Section Analysis
+      doc.fontSize(18).text('Detailed Section Analysis');
+      analysis.results.sections.forEach((section: any) => {
+        doc.moveDown();
+        doc.fontSize(14).text(`${section.name} - Score: ${section.score}%`);
+        doc.fontSize(12).text(section.content);
+        doc.fontSize(12).text('Suggestions:');
+        section.suggestions.forEach((suggestion: string) => {
+          doc.text(`• ${suggestion}`);
+        });
+      });
+    }
+
     doc.end();
   });
 }
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    const pythonProcess = spawn("python", [
-      "server/resume_service.py",
-    ]);
+    const pythonProcess = spawn("python", ["server/resume_service.py"]);
 
     let resultData = "";
 
@@ -111,7 +108,6 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
       }
     });
 
-    // Send the PDF data to Python process
     pythonProcess.stdin.write(JSON.stringify({
       file_bytes: fileBuffer.toString("base64"),
       filename: filename
@@ -164,7 +160,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.get("/api/analysis/:id", async (req, res) => {
-    const analysis = await storage.getAnalysis(Number(req.params.id));
+    const analysis = await storage.getAnalysis(req.params.id);
     if (!analysis) {
       return res.status(404).json({ message: "Analysis not found" });
     }
@@ -174,7 +170,7 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/analysis/:id/send-pdf", async (req, res) => {
     try {
       const { email } = req.body;
-      const analysis = await storage.getAnalysis(Number(req.params.id));
+      const analysis = await storage.getAnalysis(req.params.id);
 
       if (!analysis) {
         return res.status(404).json({ message: "Analysis not found" });
