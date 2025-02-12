@@ -8,6 +8,7 @@ from pdfminer.layout import LAParams
 from pdfminer.converter import TextConverter
 from io import StringIO
 import os
+from dotenv import load_dotenv
 import sys
 import json
 import base64
@@ -16,6 +17,14 @@ import time
 import traceback
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
+
+# Load environment variables
+load_dotenv()
+
+# Access environment variables
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY environment variable is not set")
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
@@ -109,7 +118,7 @@ rate_limiter = RateLimiter(requests_per_minute=30)  # Adjust based on API limits
 
 # Initialize Gemini with proper error handling
 try:
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+    genai.configure(api_key=GOOGLE_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
     log_info("Successfully initialized Gemini model")
 except Exception as e:

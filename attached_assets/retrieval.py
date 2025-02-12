@@ -1,5 +1,19 @@
+<replit_final_file>
 # Streamlit
 import streamlit as st
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
+
+# Environment variables
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+COHERE_API_KEY = os.getenv('COHERE_API_KEY')
+
+if not all([OPENAI_API_KEY, GOOGLE_API_KEY, COHERE_API_KEY]):
+    raise ValueError("Missing required API keys in environment variables")
 
 # document loader
 from langchain_community.document_loaders import PDFMinerLoader
@@ -98,11 +112,11 @@ def select_embeddings_model(LLM_service="OpenAI"):
     """Select the Embeddings model: OpenAIEmbeddings or GoogleGenerativeAIEmbeddings."""
 
     if LLM_service == "OpenAI":
-        embeddings = OpenAIEmbeddings(api_key=st.session_state.openai_api_key)
+        embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY) #Using env variable here
 
     if LLM_service == "Google":
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001", google_api_key=st.session_state.google_api_key
+            model="models/embedding-001", google_api_key=GOOGLE_API_KEY #Using env variable here
         )
 
     return embeddings
@@ -190,7 +204,7 @@ def retrieval_main():
             )
             st.session_state.retriever = CohereRerank_retriever(
                 base_retriever=base_retriever,
-                cohere_api_key=st.session_state.cohere_api_key,
+                cohere_api_key=COHERE_API_KEY, #Using env variable here
                 cohere_model="rerank-multilingual-v2.0",
                 top_n=min(2, len(documents)),
             )
