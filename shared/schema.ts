@@ -3,9 +3,11 @@ import { z } from "zod";
 // Type definitions for BigQuery tables
 export const resumeAnalysisSchema = z.object({
   id: z.string(),
-  fileName: z.string(),
-  uploadedAt: z.string(),
-  status: z.string(),
+  document_id: z.string(),
+  candidate_name: z.string(),
+  score: z.number().min(0).max(100),
+  feedback: z.string(),
+  timestamp: z.string(),
   results: z.object({
     overview: z.string(),
     strengths: z.array(z.string()),
@@ -22,12 +24,10 @@ export const resumeAnalysisSchema = z.object({
 
 export const resumeScoreSchema = z.object({
   id: z.string(),
-  analysisId: z.string(), 
-  sectionName: z.string(),
-  score: z.number(),
-  feedback: z.string(),
-  suggestions: z.array(z.string()),
-  timestamp: z.string()
+  analysis_id: z.string(),
+  section_name: z.string(),
+  score: z.number().min(0).max(100),
+  feedback: z.string()
 });
 
 // Types for TypeScript
@@ -35,5 +35,5 @@ export type ResumeAnalysis = z.infer<typeof resumeAnalysisSchema>;
 export type ResumeScore = z.infer<typeof resumeScoreSchema>;
 
 // Insert types without auto-generated fields
-export type InsertAnalysis = Omit<ResumeAnalysis, 'id' | 'results'>;
+export type InsertAnalysis = Omit<ResumeAnalysis, 'id' | 'timestamp'>;
 export type InsertScore = Omit<ResumeScore, 'id'>;
