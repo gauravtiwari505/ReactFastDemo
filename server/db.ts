@@ -79,25 +79,22 @@ async function ensureTablesExist() {
           // Check if table exists
           const [exists] = await table.exists();
 
-          if (exists) {
-            // Delete existing table
-            await table.delete();
-            console.log(`Deleted existing table: ${tableName}`);
+          if (!exists) {
+            // Create new table with full options
+            const createOptions = {
+              schema,
+              location: 'US',
+              ...(timePartitioning && { timePartitioning })
+            };
+
+            await dataset.createTable(tableName, createOptions);
+            console.log(`Created table: ${tableName}`);
+
+            // Wait after creation
             await new Promise(resolve => setTimeout(resolve, retryDelay));
+          } else {
+            console.log(`Table ${tableName} already exists, skipping creation`);
           }
-
-          // Create new table with full options
-          const createOptions = {
-            schema,
-            location: 'US',
-            ...(timePartitioning && { timePartitioning })
-          };
-
-          await dataset.createTable(tableName, createOptions);
-          console.log(`Created table: ${tableName}`);
-
-          // Wait after creation
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
 
           // Verify table exists and is accessible
           const [tableExists] = await table.exists();
