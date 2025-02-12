@@ -23,7 +23,7 @@ const upload = multer({
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.GMAIL_USER || 'gaurav@metalytics.uk',
+    user: 'gaurav@metalytics.uk',  
     pass: process.env.GMAIL_APP_PASSWORD
   }
 });
@@ -183,7 +183,7 @@ export function registerRoutes(app: Express): Server {
 
       // Send email with PDF attachment
       await transporter.sendMail({
-        from: process.env.GMAIL_USER || 'gaurav@metalytics.uk',
+        from: 'gaurav@metalytics.uk',  
         to: email,
         subject: 'Your Resume Analysis Report',
         text: 'Please find attached your resume analysis report from GigFlick.',
