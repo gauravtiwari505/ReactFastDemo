@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// BigQuery schema definitions
+// Type definitions for BigQuery tables
 export const resumeAnalysisSchema = z.object({
   id: z.string(),
   fileName: z.string(),
