@@ -84,7 +84,7 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    const pythonProcess = spawn("python", ["server/resume_service.py"]);
+    const pythonProcess = spawn("python3", ["server/resume_service.py"]);
 
     let resultData = "";
 
