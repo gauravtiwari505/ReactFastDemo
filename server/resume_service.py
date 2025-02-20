@@ -395,19 +395,22 @@ rate_limiter = RateLimiter(requests_per_minute=30)  # Adjust based on API limits
 
 if __name__ == "__main__":
     try:
+        # Ensure stdout is line-buffered
+        sys.stdout.reconfigure(line_buffering=True)
+        
         # Read input from Node.js
         input_data = json.loads(sys.stdin.read())
         file_bytes = base64.b64decode(input_data["file_bytes"])
         filename = input_data["filename"]
-        log_info(f"Received file: {filename}")
-
+        
         # Analyze the resume
         results = analyze_resume(file_bytes, filename)
-
-        # Ensure the results are JSON serializable before sending
-        print(json.dumps(results))  # Send results back to Node.js
+        
+        # Ensure the results are JSON serializable and properly formatted
+        output = json.dumps(results, ensure_ascii=False)
+        print(output, flush=True)
         sys.exit(0)
     except Exception as e:
-        log_error(f"Error during analysis: {str(e)}")
-        print(json.dumps({"error": str(e)}))
+        error_msg = json.dumps({"error": str(e)}, ensure_ascii=False)
+        print(error_msg, flush=True)
         sys.exit(1)

@@ -88,24 +88,33 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
     let resultData = "";
 
+    let errorData = "";
+    
     pythonProcess.stdout.on("data", (data) => {
       resultData += data.toString();
     });
 
     pythonProcess.stderr.on("data", (data) => {
+      errorData += data.toString();
       console.error(`Python Error: ${data}`);
     });
 
     pythonProcess.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}`));
-        return;
-      }
       try {
-        const results = JSON.parse(resultData);
-        resolve(results);
+        if (resultData.trim()) {
+          const results = JSON.parse(resultData.trim());
+          if (results.error) {
+            reject(new Error(results.error));
+          } else {
+            resolve(results);
+          }
+        } else if (code !== 0) {
+          reject(new Error(`Python process failed: ${errorData}`));
+        } else {
+          reject(new Error("No output from Python process"));
+        }
       } catch (err) {
-        reject(new Error("Failed to parse Python output"));
+        reject(new Error(`Failed to parse Python output: ${err.message}`));
       }
     });
 
