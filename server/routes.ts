@@ -7,19 +7,10 @@ import type { Request } from "express";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import { spawn } from "child_process";
-import path from "path";
-import fs from "fs";
-
-// Create tmp directory if it doesn't exist
-const TMP_DIR = path.join(process.cwd(), 'tmp');
-if (!fs.existsSync(TMP_DIR)) {
-  fs.mkdirSync(TMP_DIR, { recursive: true });
-}
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
   fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
-    console.log("Received file:", file.originalname, "with mimetype:", file.mimetype);
     if (file.mimetype === "application/pdf") {
       cb(null, true);
     } else {
@@ -93,67 +84,28 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    // Try both possible locations for the Python script
-    const possiblePaths = [
-      path.join(process.cwd(), "server", "resume_service.py"),
-      path.join(process.cwd(), "resume_service.py")
-    ];
-
-    let pythonScriptPath = possiblePaths.find(p => fs.existsSync(p));
-
-    if (!pythonScriptPath) {
-      console.error("Python script not found in any of these locations:", possiblePaths);
-      reject(new Error("Analysis script not found"));
-      return;
-    }
-
-    console.log("Using Python script at:", pythonScriptPath);
-
-    // Ensure tmp directory exists
-    if (!fs.existsSync(TMP_DIR)) {
-      try {
-        fs.mkdirSync(TMP_DIR, { recursive: true });
-        console.log("Created tmp directory at:", TMP_DIR);
-      } catch (error) {
-        console.error("Failed to create tmp directory:", error);
-        reject(new Error("Failed to create temporary directory"));
-        return;
-      }
-    }
-
-    const pythonProcess = spawn("python3", [pythonScriptPath]);
+    const pythonProcess = spawn("python", ["server/resume_service.py"]);
 
     let resultData = "";
-    let errorData = "";
 
     pythonProcess.stdout.on("data", (data) => {
-      console.log("Python stdout:", data.toString());
       resultData += data.toString();
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      console.error("Python stderr:", data.toString());
-      errorData += data.toString();
-    });
-
-    pythonProcess.on("error", (error) => {
-      console.error("Failed to start Python process:", error);
-      reject(new Error(`Failed to start Python process: ${error.message}`));
+      console.error(`Python Error: ${data}`);
     });
 
     pythonProcess.on("close", (code) => {
-      console.log("Python process exited with code:", code);
       if (code !== 0) {
-        console.error("Python process error:", errorData);
-        reject(new Error(`Python process failed with code ${code}: ${errorData}`));
+        reject(new Error(`Python process exited with code ${code}`));
         return;
       }
       try {
         const results = JSON.parse(resultData);
         resolve(results);
       } catch (err) {
-        console.error("Failed to parse Python output:", resultData);
-        reject(new Error("Failed to parse analysis results"));
+        reject(new Error("Failed to parse Python output"));
       }
     });
 
@@ -167,33 +119,29 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
 export function registerRoutes(app: Express): Server {
   app.post("/api/analyze", upload.single("resume"), async (req, res) => {
-    console.log("Analyze endpoint hit");
     const file = req.file as Express.Multer.File | undefined;
-
     if (!file) {
-      console.error("No file received or invalid file type");
-      return res.status(400).json({ message: "No PDF file provided or invalid file type" });
+      return res.status(400).json({ message: "No PDF file provided" });
     }
 
     try {
-      console.log("Creating analysis record for file:", file.originalname);
       const analysis = await storage.createAnalysis({
         fileName: file.originalname,
         uploadedAt: new Date().toISOString(),
         status: "processing"
       });
 
-      console.log("Starting Python analysis process");
+      // Process the PDF using our Python service
       const results = await analyzePDF(file.buffer, file.originalname);
 
-      console.log("Analysis complete, updating record");
+      // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
         results: results
       });
 
+      // Store section scores
       if (results.sections) {
-        console.log("Storing section scores");
         for (const section of results.sections) {
           await storage.createScore({
             analysisId: analysis.id,
@@ -209,11 +157,7 @@ export function registerRoutes(app: Express): Server {
       res.json(updatedAnalysis);
     } catch (error) {
       console.error("Analysis error:", error);
-      console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace available");
-      res.status(500).json({ 
-        message: "Failed to analyze resume",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
+      res.status(500).json({ message: "Failed to analyze resume" });
     }
   });
 

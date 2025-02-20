@@ -8,14 +8,15 @@ import type {
 
 const DATASET = 'gigflick';
 
-// Get project ID from environment variables to be consistent with db.ts
-const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
+// Get credentials and project ID
+const credentials = JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}');
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || credentials.project_id;
 
 if (!PROJECT_ID) {
-  throw new Error('GOOGLE_CLOUD_PROJECT environment variable is required');
+  throw new Error('Project ID not found in BIGQUERY_CREDENTIALS or GOOGLE_CLOUD_PROJECT');
 }
 
-console.log('Storage: Using BigQuery Project ID:', PROJECT_ID);
+console.log('Using BigQuery Project ID:', PROJECT_ID);
 
 export interface IStorage {
   createAnalysis(analysis: InsertAnalysis): Promise<ResumeAnalysis>;
@@ -36,13 +37,13 @@ export interface IStorage {
 export class BigQueryStorage implements IStorage {
   private async verifyTableAccess(tableName: string): Promise<void> {
     console.log(`Verifying access to table: ${PROJECT_ID}.${DATASET}.${tableName}`);
+    const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
     try {
-      const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
       await bigquery.query({ query });
       console.log(`Successfully verified access to ${tableName}`);
     } catch (error) {
       console.error(`Failed to verify access to ${tableName}:`, error);
-      throw new Error(`Database access error: ${error.message}`);
+      throw error;
     }
   }
 
@@ -56,19 +57,13 @@ export class BigQueryStorage implements IStorage {
       const id = Date.now().toString();
       console.log('Generated ID:', id);
 
-      // Prepare row data with initial empty results structure
+      // Prepare row data
       const row = {
         id,
         fileName: insertAnalysis.fileName,
         resumeUploadedAt: timestamp,
         status: insertAnalysis.status,
-        results: JSON.stringify({
-          overview: "",
-          strengths: [],
-          weaknesses: [],
-          overallScore: 0,
-          sections: []
-        })
+        results: '{}'  // Initialize with empty JSON object
       };
 
       console.log('Attempting to insert row:', JSON.stringify(row));
@@ -87,19 +82,13 @@ export class BigQueryStorage implements IStorage {
 
       console.log('Successfully inserted row');
 
-      // Return the created analysis with proper initial structure
+      // Return the created analysis
       return {
         id,
         fileName: insertAnalysis.fileName,
-        uploadedAt: timestamp,
+        uploadedAt: timestamp,  // Keep the interface consistent
         status: insertAnalysis.status,
-        results: {
-          overview: "",
-          strengths: [],
-          weaknesses: [],
-          overallScore: 0,
-          sections: []
-        }
+        results: {}
       };
     } catch (error: any) {
       console.error('Error in createAnalysis:', error);
