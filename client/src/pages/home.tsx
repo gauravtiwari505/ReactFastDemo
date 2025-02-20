@@ -28,7 +28,7 @@ export default function Home() {
     onSuccess: (data) => {
       toast({
         title: "Upload successful",
-        description: "Starting analysis...",
+        description: "Analyzing your resume...",
       });
       setLocation(`/analysis/${data.id}`);
     },

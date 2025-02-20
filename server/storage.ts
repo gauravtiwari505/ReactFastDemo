@@ -50,29 +50,27 @@ export class BigQueryStorage implements IStorage {
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
     console.log('Starting createAnalysis...');
     try {
-      // Verify table access first
       await this.verifyTableAccess('resume_analyses');
 
       const timestamp = new Date().toISOString();
       const id = Date.now().toString();
       console.log('Generated ID:', id);
 
-      // Prepare row data
       const row = {
         id,
         fileName: insertAnalysis.fileName,
         resumeUploadedAt: timestamp,
         status: insertAnalysis.status,
-        results: '{}'  // Initialize with empty JSON object
+        statusMessage: insertAnalysis.statusMessage || 'Starting analysis...',
+        results: JSON.stringify({})
       };
 
       console.log('Attempting to insert row:', JSON.stringify(row));
 
-      // Insert using direct SQL to ensure consistency
       const insertQuery = `
         INSERT INTO \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-        (id, fileName, resumeUploadedAt, status, results)
-        VALUES(@id, @fileName, @resumeUploadedAt, @status, @results)
+        (id, fileName, resumeUploadedAt, status, statusMessage, results)
+        VALUES(@id, @fileName, @resumeUploadedAt, @status, @statusMessage, @results)
       `;
 
       await bigquery.query({
@@ -82,12 +80,12 @@ export class BigQueryStorage implements IStorage {
 
       console.log('Successfully inserted row');
 
-      // Return the created analysis
       return {
         id,
         fileName: insertAnalysis.fileName,
-        uploadedAt: timestamp,  // Keep the interface consistent
+        uploadedAt: timestamp,
         status: insertAnalysis.status,
+        statusMessage: insertAnalysis.statusMessage,
         results: {}
       };
     } catch (error: any) {
@@ -106,6 +104,7 @@ export class BigQueryStorage implements IStorage {
             fileName,
             resumeUploadedAt as uploadedAt,
             status,
+            statusMessage,
             results
           FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
@@ -129,20 +128,14 @@ export class BigQueryStorage implements IStorage {
     try {
       await this.verifyTableAccess('resume_analyses');
 
-      // Remove statusMessage from update object as it's not in our schema
-      const { statusMessage, ...updateData } = update as any;
-
-      // Add analysisFinishedAt when status is completed
-      const finalUpdateData: any = {
-        ...updateData,
-        results: updateData.results ? JSON.stringify(updateData.results) : undefined
+      // Convert results to string if it exists
+      const finalUpdate = {
+        ...update,
+        results: update.results ? JSON.stringify(update.results) : undefined
       };
 
-      if (update.status === 'completed') {
-        finalUpdateData.analysisFinishedAt = new Date().toISOString();
-      }
-
-      const setClause = Object.entries(finalUpdateData)
+      // Build SET clause dynamically
+      const setClause = Object.entries(finalUpdate)
         .filter(([_, value]) => value !== undefined)
         .map(([key, _]) => `${key} = @${key}`)
         .join(', ');
@@ -155,7 +148,7 @@ export class BigQueryStorage implements IStorage {
 
       await bigquery.query({
         query: updateQuery,
-        params: { ...finalUpdateData, id }
+        params: { ...finalUpdate, id }
       });
 
       return this.getAnalysis(id) as Promise<ResumeAnalysis>;

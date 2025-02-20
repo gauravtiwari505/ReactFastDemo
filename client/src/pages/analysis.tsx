@@ -22,26 +22,10 @@ export default function Analysis() {
     },
   });
 
-  // Loading state with progress message
-  if (isLoading || analysis?.status === "processing") {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md mx-auto px-4">
-          <div className="relative">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-            <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/10">
-              <p className="text-muted-foreground animate-pulse" id="analysis-status">
-                {analysis?.statusMessage || "Starting analysis..."}
-              </p>
-            </div>
-          </div>
-          {analysis?.status === "processing" && (
-            <Progress 
-              value={40} 
-              className="w-full max-w-xs mx-auto mt-4" 
-            />
-          )}
-        </div>
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }

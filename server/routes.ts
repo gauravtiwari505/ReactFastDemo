@@ -87,44 +87,39 @@ async function analyzePDF(fileBuffer: Buffer, filename: string, analysisId: stri
     const pythonProcess = spawn("python", ["server/resume_service.py"]);
 
     let resultData = "";
-    let errorData = "";
 
-    pythonProcess.stdout.on("data", (data) => {
+    pythonProcess.stdout.on("data", async (data) => {
       const message = data.toString();
-      // Check for progress messages
       if (message.startsWith('PROGRESS:')) {
-        const statusMessage = message.replace('PROGRESS:', '').trim();
-        // Update analysis status message
-        storage.updateAnalysis(analysisId, {
-          status: "processing",
-          statusMessage: statusMessage
-        }).catch(console.error);
+        try {
+          const progressData = JSON.parse(message.replace('PROGRESS:', ''));
+          // Update analysis status message
+          await storage.updateAnalysis(analysisId, {
+            status: "processing",
+            statusMessage: progressData.message
+          });
+        } catch (err) {
+          console.error("Error parsing progress message:", err);
+        }
       } else {
         resultData += message;
       }
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      errorData += data.toString();
       console.error(`Python Error: ${data}`);
     });
 
     pythonProcess.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python process exited with code ${code}`));
+        return;
+      }
       try {
-        if (resultData.trim()) {
-          const results = JSON.parse(resultData.trim());
-          if (results.error) {
-            reject(new Error(results.error));
-          } else {
-            resolve(results);
-          }
-        } else if (code !== 0) {
-          reject(new Error(`Python process failed: ${errorData}`));
-        } else {
-          reject(new Error("No output from Python process"));
-        }
-      } catch (err: any) {
-        reject(new Error(`Failed to parse Python output: ${err.message}`));
+        const results = JSON.parse(resultData);
+        resolve(results);
+      } catch (err) {
+        reject(new Error("Failed to parse Python output"));
       }
     });
 
