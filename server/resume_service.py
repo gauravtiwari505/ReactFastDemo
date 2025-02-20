@@ -1,24 +1,15 @@
 import google.generativeai as genai
 from pdfminer.high_level import extract_text
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.layout import LAParams
-from pdfminer.converter import TextConverter
-from io import StringIO
 import os
-from dotenv import load_dotenv
-import sys
 import json
 import base64
 from pathlib import Path
 import time
 import traceback
-from typing import Dict, Any, List
-from datetime import datetime, timedelta
+from typing import Dict, Any
+import asyncio
 
-# Define logging functions first
+# Define logging functions
 def log_error(error_msg: str, include_trace: bool = True):
     """Helper function to log errors with optional stack trace"""
     error_output = f"Error: {error_msg}"
@@ -34,84 +25,59 @@ def log_progress(msg: str):
     """Helper function for logging progress messages that will be shown to user"""
     print(f"PROGRESS:{msg}", flush=True)
 
-# Load environment variables
-load_dotenv()
-
-# Access environment variables
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY environment variable is not set")
-
-# Initialize Gemini globally
-genai.configure(api_key=GOOGLE_API_KEY)
-try:
-    model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
-    log_info("Successfully initialized Gemini model")
-except Exception as e:
-    log_error(f"Failed to initialize Gemini: {str(e)}")
-    raise
+# Initialize Gemini
+genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract text from PDF with robust error handling"""
-    output_string = StringIO()
-    device = None
-
+    """Extract text from PDF"""
     try:
-        # Set up PDF parsing tools
-        rsrcmgr = PDFResourceManager()
-        device = TextConverter(rsrcmgr, output_string, laparams=LAParams())
-        interpreter = PDFPageInterpreter(rsrcmgr, device)
-
-        # Open and process PDF file
-        with open(pdf_path, 'rb') as file:
-            # Create parser and document objects
-            parser = PDFParser(file)
-            doc = PDFDocument(parser)
-
-            # Process each page
-            for page in PDFPage.create_pages(doc):
-                interpreter.process_page(page)
-
-        # Get text content
-        text = output_string.getvalue()
-
-        if not text.strip():
-            raise ValueError("No text content extracted from PDF")
-
-        return text
-
+        return extract_text(pdf_path)
     except Exception as e:
         log_error(f"PDF extraction error: {str(e)}")
         raise ValueError(f"Failed to extract text from PDF: {str(e)}")
-    finally:
-        if device:
-            device.close()
-        output_string.close()
 
-def analyze_resume_section(text: str, section_name: str) -> dict:
-    """Analyze a specific section of the resume using Gemini with proper error handling."""
-    log_info(f"Starting analysis of section: {section_name}")
+async def generate_overview(text: str) -> dict:
+    """Generate an overview analysis of the entire resume using Gemini."""
+    formatted_prompt = f"""Analyze this resume and provide a comprehensive evaluation.
+    Focus on specific, actionable insights for improving the resume.
+    Consider format, content quality, and professional impact.
 
-    prompts = {
-        "Contact Information": """Extract and evaluate the contact information...""",
-        "Professional Summary": """Extract and evaluate the summary/objective section...""",
-        "Work Experience": """Extract and evaluate all work experiences...""",
-        "Skills": """Analyze the skills section...""",
-        "Education": """Extract and evaluate all educational background...""",
-        "Languages": """Extract and evaluate language proficiencies...""",
-        "Projects": """Extract and evaluate all projects...""",
-        "Certifications": """Extract and evaluate all certifications..."""
-    }
+    Important: Respond with ONLY a JSON object that has exactly these keys:
+    {{
+        "overview": <string with 2-3 sentence professional overview>,
+        "strengths": [<array of 3 specific resume strengths>],
+        "weaknesses": [<array of 3 specific areas for improvement>]
+    }}
 
+    Resume text:
+    {text}"""
+
+    try:
+        # Run in executor to prevent blocking
+        response = await asyncio.get_event_loop().run_in_executor(
+            None, model.generate_content, formatted_prompt
+        )
+        result = extract_json_response(response.text)
+        validate_overview_result(result)
+        return result
+    except Exception as e:
+        log_error(f"Error generating overview: {str(e)}")
+        return {
+            "overview": f"Analysis failed: {str(e)}",
+            "strengths": ["Not available due to error"],
+            "weaknesses": ["Not available due to error"]
+        }
+
+async def analyze_resume_section(text: str, section_name: str) -> dict:
+    """Analyze a specific section of the resume using Gemini."""
     prompt = f"""Analyze the following resume section: {section_name}
 
     Text to analyze:
     {text}
-
-    {prompts.get(section_name, prompts["Work Experience"])}
 
     Important: Respond with ONLY a JSON object that has exactly these keys:
     {{
@@ -121,19 +87,12 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
     }}"""
 
     try:
-        log_info(f"Sending request to Gemini for section: {section_name}")
-        response = model.generate_content(prompt)
-
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini")
-
-        log_info(f"Received response for section: {section_name}")
-        log_info(f"Raw response preview: {response.text[:200]}...")
-
+        # Run in executor to prevent blocking
+        response = await asyncio.get_event_loop().run_in_executor(
+            None, model.generate_content, prompt
+        )
         result = extract_json_response(response.text)
         validate_section_result(result)
-
-        log_info(f"Successfully analyzed section: {section_name}")
         return result
     except Exception as e:
         log_error(f"Error analyzing section {section_name}: {str(e)}")
@@ -143,70 +102,30 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
             "suggestions": ["Error during analysis"]
         }
 
-def generate_overview(text: str) -> dict:
-    """Generate an overview analysis of the entire resume using Gemini."""
-    formatted_prompt = f"""Analyze this resume and provide a comprehensive evaluation.
-    Focus on specific, actionable insights for improving the resume.
-    Consider format, content quality, and professional impact.
-
-    Important: Respond with ONLY a JSON object that has exactly these keys:
-    {{
-        "overview": <string with 2-3 sentence professional overview>,
-        "strengths": [<array of 3 specific resume strengths>],
-        "weaknesses": [<array of 3 specific areas for improvement>]
-    }}
-
-    Resume text:
-    {text}"""
-
-    try:
-        response = model.generate_content(formatted_prompt)
-        result = extract_json_response(response.text)
-        validate_overview_result(result)
-        return result
-    except Exception as e:
-        log_error(f"Error generating overview: {str(e)}")
-        return {
-            "overview": f"Analysis failed: {str(e)}",
-            "strengths": ["Not available due to error"],
-            "weaknesses": ["Not available due to error"]
-        }
-
 async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
-    """Process and analyze a resume with improved error handling and rate limiting."""
+    """Process and analyze a resume with improved error handling."""
     log_progress("Starting your resume analysis...")
 
-    temp_file_path = save_uploaded_file(file_bytes, filename)
-    log_info(f"Saved file to {temp_file_path}")
+    temp_file_path = os.path.join(TMP_DIR, filename)
+    with open(temp_file_path, "wb") as temp_file:
+        temp_file.write(file_bytes)
 
     try:
-        # Extract text from PDF using our enhanced extraction method
-        try:
-            log_progress("Reading your resume content...")
-            full_text = extract_text_from_pdf(temp_file_path)
-            log_info(f"Successfully extracted {len(full_text)} characters of text")
-        except Exception as e:
-            log_error(f"Failed to extract text from PDF: {str(e)}")
-            raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
+        log_progress("Reading your resume content...")
+        full_text = extract_text_from_pdf(temp_file_path)
+        log_info(f"Successfully extracted {len(full_text)} characters of text")
 
-        # Generate overview analysis with rate limiting
         log_progress("Analyzing your overall resume profile...")
         overview_analysis = await generate_overview(full_text)
-        log_info("Generated overview analysis")
 
-        # Define sections to analyze
         sections = [
-            "Contact Information",
             "Professional Summary",
             "Work Experience",
             "Skills",
             "Education",
-            "Languages",
-            "Projects",
-            "Certifications"
+            "Projects"
         ]
 
-        # Analyze each section with proper rate limiting
         section_results = []
         for section in sections:
             log_progress(f"Evaluating your {section.lower()}...")
@@ -216,10 +135,8 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 **section_analysis
             })
 
-        # Calculate overall score
         overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
 
-        # Convert the results to a proper JSON format
         results = {
             "overview": overview_analysis.get("overview", ""),
             "strengths": overview_analysis.get("strengths", []),
@@ -228,9 +145,6 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             "overallScore": round(overall_score)
         }
 
-        # Ensure the results can be properly serialized to JSON
-        json.dumps(results)  # This will raise an error if the structure isn't JSON-serializable
-
         log_progress("Analysis complete! Preparing your detailed report...")
         return results
 
@@ -238,22 +152,15 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         log_error(f"Error during analysis: {str(e)}")
         raise
     finally:
-        # Cleanup
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
-def save_uploaded_file(file_bytes: bytes, filename: str) -> str:
-    """Save the uploaded file to TMP_DIR."""
-    temp_file_path = os.path.join(TMP_DIR, filename)
-    with open(temp_file_path, "wb") as temp_file:
-        temp_file.write(file_bytes)
-    return temp_file_path
-
 def extract_json_response(text: str) -> Dict[str, Any]:
-    """Helper function to extract JSON from response text"""
+    """Extract JSON from response text"""
     try:
         return json.loads(text)
     except:
+        # Try to find JSON in the text
         start = text.find('{')
         end = text.rfind('}') + 1
         if start >= 0 and end > start:
@@ -263,181 +170,21 @@ def extract_json_response(text: str) -> Dict[str, Any]:
 def validate_section_result(result: Dict[str, Any]):
     """Validate section analysis result"""
     required_fields = ["score", "content", "suggestions"]
-    missing_fields = [field for field in required_fields if field not in result]
-    if missing_fields:
-        raise ValueError(f"Missing required fields in response: {missing_fields}")
+    if not all(field in result for field in required_fields):
+        raise ValueError("Missing required fields in section response")
 
-    # Validate score is an integer between 0 and 100
     try:
         score = int(result["score"])
         if not 0 <= score <= 100:
             raise ValueError(f"Score must be between 0 and 100, got {score}")
-        result["score"] = score  # Ensure score is an integer
+        result["score"] = score
     except (ValueError, TypeError):
         raise ValueError(f"Invalid score value: {result.get('score')}")
-
-def handle_api_call(func):
-    """Decorator to handle API calls with retries and exponential backoff"""
-    def wrapper(*args, **kwargs):
-        max_retries = 4  # Allow up to 16 seconds (2^4)
-        base_delay = 2   # Initial delay of 2 seconds
-
-        for attempt in range(max_retries):
-            try:
-                # Wait for rate limiter before making request
-                rate_limiter.wait_if_needed()
-
-                log_info(f"Attempting {func.__name__} (attempt {attempt + 1}/{max_retries})")
-                return func(*args, **kwargs)
-            except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)  # Exponential backoff: 2, 4, 8, 16 seconds
-                    log_info(f"Rate limit hit for {func.__name__}, waiting {delay} seconds before retry...")
-                    time.sleep(delay)  # This delay is in addition to the rate limiter
-                    continue
-                log_error(f"Error in {func.__name__}: {str(e)}")
-                return {
-                    "score": 0,
-                    "suggestions": [f"Analysis failed: {str(e)}"],
-                    "content": "Analysis failed"
-                }
-        return wrapper
-    return wrapper
-
-@handle_api_call
-async def analyze_resume_section(text: str, section_name: str) -> dict:
-    """Analyze a specific section of the resume using Gemini with proper error handling."""
-    log_info(f"Starting analysis of section: {section_name}")
-
-    prompts = {
-        "Contact Information": """Extract and evaluate the contact information. Output a dictionary with the following keys:
-            - score: Rate the contact information by giving a score (integer) from 0 to 100
-            - content: Evaluate the contact information in 2-3 sentences
-            - suggestions: A list of improvements for the contact section""",
-        "Professional Summary": """Extract and evaluate the summary/objective section:
-            - If there is no summary section, generate a strong summary in no more than 5 sentences
-            - Include: years of experience, top skills and experiences, biggest achievements, and objective
-            Output a dictionary with:
-            - score: Rate the summary by giving a score (integer) from 0 to 100
-            - content: Evaluate the summary format and content in 2-3 sentences
-            - suggestions: A list of ways to strengthen the summary""",
-        "Work Experience": """Extract and evaluate all work experiences:
-            For each work experience analyze:
-            - Job title and company
-            - Responsibilities and achievements
-            - Use of action verbs and metrics
-            Output a dictionary with:
-            - score: Rate the work experience by giving a score (integer) from 0 to 100
-            - content: Evaluate the experience quality in 2-3 sentences
-            - suggestions: A list of ways to improve the work experience descriptions""",
-        "Skills": """Analyze the skills section and output a dictionary with:
-            - score: Rate the skills by giving a score (integer) from 0 to 100
-            - content: Evaluate the skills presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the skills section""",
-        "Education": """Extract and evaluate all educational background:
-            For each education entry analyze:
-            - Institution name
-            - Degree and honors
-            - Dates and achievements
-            Output a dictionary with:
-            - score: Rate the education section by giving a score (integer) from 0 to 100
-            - content: Evaluate the education presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the education section""",
-        "Languages": """Extract and evaluate language proficiencies:
-            For each language analyze:
-            - Language name
-            - Proficiency level
-            Output a dictionary with:
-            - score: Rate the language section by giving a score (integer) from 0 to 100
-            - content: Evaluate the language skills presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the language section""",
-        "Projects": """Extract and evaluate all projects:
-            For each project analyze:
-            - Project title and description
-            - Technologies used
-            - Impact and results
-            Output a dictionary with:
-            - score: Rate the projects section by giving a score (integer) from 0 to 100
-            - content: Evaluate the projects presentation in 2-3 sentences
-            - suggestions: A list of ways to improve project descriptions""",
-        "Certifications": """Extract and evaluate all certifications:
-            For each certification analyze:
-            - Certification name
-            - Issuing organization
-            - Date and validity
-            Output a dictionary with:
-            - score: Rate the certifications by giving a score (integer) from 0 to 100
-            - content: Evaluate the certifications presentation in 2-3 sentences
-            - suggestions: A list of ways to improve the certifications section"""
-    }
-
-    prompt = f"""Analyze the following resume section: {section_name}
-
-    Text to analyze:
-    {text}
-
-    {prompts.get(section_name, prompts["Work Experience"])}
-
-    Important: Respond with ONLY a JSON object that has exactly these keys:
-    {{
-        "score": <number 0-100>,
-        "content": <string evaluation>,
-        "suggestions": [<array of string suggestions>]
-    }}"""
-
-    try:
-        log_info(f"Sending request to Gemini for section: {section_name}")
-        response = model.generate_content(prompt)
-
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini")
-
-        log_info(f"Received response for section: {section_name}")
-        log_info(f"Raw response preview: {response.text[:200]}...")
-
-        result = extract_json_response(response.text)
-        validate_section_result(result)
-
-        log_info(f"Successfully analyzed section: {section_name}")
-        return result
-    except Exception as e:
-        log_error(f"Error analyzing section {section_name}: {str(e)}")
-        raise  # Re-raise to let the decorator handle the retry logic
-
-@handle_api_call
-def generate_overview(text: str) -> dict:
-    """Generate an overview analysis of the entire resume using Gemini."""
-    formatted_prompt = f"""Analyze this resume and provide a comprehensive evaluation.
-    Focus on specific, actionable insights for improving the resume.
-    Consider format, content quality, and professional impact.
-
-    Important: Respond with ONLY a JSON object that has exactly these keys:
-    {{
-        "overview": <string with 2-3 sentence professional overview>,
-        "strengths": [<array of 3 specific resume strengths>],
-        "weaknesses": [<array of 3 specific areas for improvement>]
-    }}
-
-    Resume text:
-    {text}"""
-
-    try:
-        response = model.generate_content(formatted_prompt)
-        result = extract_json_response(response.text)
-        validate_overview_result(result)
-        return result
-    except Exception as e:
-        log_error(f"Error generating overview: {str(e)}")
-        return {
-            "overview": f"Analysis failed: {str(e)}",
-            "strengths": ["Not available due to error"],
-            "weaknesses": ["Not available due to error"]
-        }
 
 def validate_overview_result(result: Dict[str, Any]):
     """Validate overview analysis result"""
     required_fields = ["overview", "strengths", "weaknesses"]
-    if not all(key in result for key in required_fields):
+    if not all(field in result for field in required_fields):
         raise ValueError("Missing required fields in overview response")
 
 class RateLimiter:
@@ -493,6 +240,7 @@ if __name__ == "__main__":
 
         # Run the async function using asyncio
         import asyncio
+        from datetime import datetime
         results = asyncio.run(analyze_resume(file_bytes, filename))
 
         # Ensure the results are JSON serializable and properly formatted

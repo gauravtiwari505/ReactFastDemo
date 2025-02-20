@@ -129,17 +129,20 @@ export class BigQueryStorage implements IStorage {
     try {
       await this.verifyTableAccess('resume_analyses');
 
+      // Remove statusMessage from update object as it's not in our schema
+      const { statusMessage, ...updateData } = update as any;
+
       // Add analysisFinishedAt when status is completed
-      const updateData: any = {
-        ...update,
-        results: update.results ? JSON.stringify(update.results) : undefined
+      const finalUpdateData: any = {
+        ...updateData,
+        results: updateData.results ? JSON.stringify(updateData.results) : undefined
       };
 
       if (update.status === 'completed') {
-        updateData.analysisFinishedAt = new Date().toISOString();
+        finalUpdateData.analysisFinishedAt = new Date().toISOString();
       }
 
-      const setClause = Object.entries(updateData)
+      const setClause = Object.entries(finalUpdateData)
         .filter(([_, value]) => value !== undefined)
         .map(([key, _]) => `${key} = @${key}`)
         .join(', ');
@@ -152,7 +155,7 @@ export class BigQueryStorage implements IStorage {
 
       await bigquery.query({
         query: updateQuery,
-        params: { ...updateData, id }
+        params: { ...finalUpdateData, id }
       });
 
       return this.getAnalysis(id) as Promise<ResumeAnalysis>;
