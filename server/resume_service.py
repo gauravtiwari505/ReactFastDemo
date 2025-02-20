@@ -9,6 +9,14 @@ from pathlib import Path
 import time
 import traceback
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
+from io import StringIO
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+from pdfminer.layout import LAParams
+from pdfminer.converter import TextConverter
 
 # Load environment variables
 load_dotenv()
@@ -459,12 +467,3 @@ if __name__ == "__main__":
         log_error(f"Error during analysis: {str(e)}")
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
-
-from io import StringIO
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.layout import LAParams
-from pdfminer.converter import TextConverter
-from datetime import datetime, timedelta
