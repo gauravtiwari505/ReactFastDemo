@@ -128,17 +128,29 @@ export class BigQueryStorage implements IStorage {
     try {
       await this.verifyTableAccess('resume_analyses');
 
-      // Convert results to string if it exists
-      const finalUpdate = {
-        ...update,
-        results: update.results ? JSON.stringify(update.results) : undefined
-      };
+      // Prepare the update data - explicitly handle each field type
+      const updateData: Record<string, any> = {};
 
-      // Build SET clause dynamically
-      const setClause = Object.entries(finalUpdate)
-        .filter(([_, value]) => value !== undefined)
+      if (update.status) {
+        updateData.status = update.status;
+      }
+
+      if (update.statusMessage) {
+        updateData.statusMessage = update.statusMessage;
+      }
+
+      if (update.results) {
+        updateData.results = JSON.stringify(update.results);
+      }
+
+      // Only include fields that are being updated
+      const setClause = Object.entries(updateData)
         .map(([key, _]) => `${key} = @${key}`)
         .join(', ');
+
+      if (!setClause) {
+        throw new Error('No fields to update');
+      }
 
       const updateQuery = `
         UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
@@ -148,7 +160,7 @@ export class BigQueryStorage implements IStorage {
 
       await bigquery.query({
         query: updateQuery,
-        params: { ...finalUpdate, id }
+        params: { ...updateData, id }
       });
 
       return this.getAnalysis(id) as Promise<ResumeAnalysis>;
