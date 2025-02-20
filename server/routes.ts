@@ -82,16 +82,26 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
   });
 }
 
-async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
+async function analyzePDF(fileBuffer: Buffer, filename: string, analysisId: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const pythonProcess = spawn("python", ["server/resume_service.py"]);
 
     let resultData = "";
-
     let errorData = "";
-    
+
     pythonProcess.stdout.on("data", (data) => {
-      resultData += data.toString();
+      const message = data.toString();
+      // Check for progress messages
+      if (message.startsWith('PROGRESS:')) {
+        const statusMessage = message.replace('PROGRESS:', '').trim();
+        // Update analysis status message
+        storage.updateAnalysis(analysisId, {
+          status: "processing",
+          statusMessage: statusMessage
+        }).catch(console.error);
+      } else {
+        resultData += message;
+      }
     });
 
     pythonProcess.stderr.on("data", (data) => {
@@ -113,7 +123,7 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
         } else {
           reject(new Error("No output from Python process"));
         }
-      } catch (err) {
+      } catch (err: any) {
         reject(new Error(`Failed to parse Python output: ${err.message}`));
       }
     });
@@ -141,7 +151,7 @@ export function registerRoutes(app: Express): Server {
       });
 
       // Process the PDF using our Python service
-      const results = await analyzePDF(file.buffer, file.originalname);
+      const results = await analyzePDF(file.buffer, file.originalname, analysis.id);
 
       // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {

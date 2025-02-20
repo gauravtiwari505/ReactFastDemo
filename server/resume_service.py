@@ -30,6 +30,10 @@ def log_info(msg: str):
     """Helper function for logging informational messages"""
     print(msg, file=sys.stderr)
 
+def log_progress(msg: str):
+    """Helper function for logging progress messages that will be shown to user"""
+    print(f"PROGRESS:{msg}", flush=True)
+
 # Load environment variables
 load_dotenv()
 
@@ -53,6 +57,7 @@ os.makedirs(TMP_DIR, exist_ok=True)
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from PDF with robust error handling"""
     output_string = StringIO()
+    device = None
 
     try:
         # Set up PDF parsing tools
@@ -82,13 +87,13 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         log_error(f"PDF extraction error: {str(e)}")
         raise ValueError(f"Failed to extract text from PDF: {str(e)}")
     finally:
+        if device:
+            device.close()
         output_string.close()
-        device.close()
-
 
 async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
-    print("status:Starting analysis...")
+    log_progress("Starting your resume analysis...")
 
     temp_file_path = save_uploaded_file(file_bytes, filename)
     log_info(f"Saved file to {temp_file_path}")
@@ -96,6 +101,7 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     try:
         # Extract text from PDF using our enhanced extraction method
         try:
+            log_progress("Reading your resume content...")
             full_text = extract_text_from_pdf(temp_file_path)
             log_info(f"Successfully extracted {len(full_text)} characters of text")
         except Exception as e:
@@ -103,6 +109,7 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             raise ValueError("Unable to read PDF content. Please ensure the file is not corrupted or password protected.")
 
         # Generate overview analysis with rate limiting
+        log_progress("Analyzing your overall resume profile...")
         overview_analysis = generate_overview(full_text)
         log_info("Generated overview analysis")
 
@@ -121,12 +128,7 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Analyze each section with proper rate limiting
         section_results = []
         for section in sections:
-            status_msg = f"Analyzing {section.lower()}..."
-            # Update status in database
-            await storage.updateAnalysis(analysis_id, {
-                "status": "processing",
-                "statusMessage": status_msg
-            })
+            log_progress(f"Evaluating your {section.lower()}...")
             section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
@@ -148,7 +150,7 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Ensure the results can be properly serialized to JSON
         json.dumps(results)  # This will raise an error if the structure isn't JSON-serializable
 
-        log_info("Analysis complete")
+        log_progress("Analysis complete! Preparing your detailed report...")
         return results
 
     except Exception as e:
@@ -402,16 +404,16 @@ if __name__ == "__main__":
     try:
         # Ensure stdout is line-buffered
         sys.stdout.reconfigure(line_buffering=True)
-        
+
         # Read input from Node.js
         input_data = json.loads(sys.stdin.read())
         file_bytes = base64.b64decode(input_data["file_bytes"])
         filename = input_data["filename"]
-        
+
         # Run the async function using asyncio
         import asyncio
         results = asyncio.run(analyze_resume(file_bytes, filename))
-        
+
         # Ensure the results are JSON serializable and properly formatted
         output = json.dumps(results, ensure_ascii=False)
         print(output, flush=True)
