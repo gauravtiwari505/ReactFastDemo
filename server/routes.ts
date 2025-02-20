@@ -93,14 +93,32 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    // Use absolute path for Python script
-    const pythonScriptPath = path.join(process.cwd(), "server", "resume_service.py");
-    console.log("Python script path:", pythonScriptPath);
+    // Try both possible locations for the Python script
+    const possiblePaths = [
+      path.join(process.cwd(), "server", "resume_service.py"),
+      path.join(process.cwd(), "resume_service.py")
+    ];
 
-    if (!fs.existsSync(pythonScriptPath)) {
-      console.error("Python script not found at:", pythonScriptPath);
+    let pythonScriptPath = possiblePaths.find(p => fs.existsSync(p));
+
+    if (!pythonScriptPath) {
+      console.error("Python script not found in any of these locations:", possiblePaths);
       reject(new Error("Analysis script not found"));
       return;
+    }
+
+    console.log("Using Python script at:", pythonScriptPath);
+
+    // Ensure tmp directory exists
+    if (!fs.existsSync(TMP_DIR)) {
+      try {
+        fs.mkdirSync(TMP_DIR, { recursive: true });
+        console.log("Created tmp directory at:", TMP_DIR);
+      } catch (error) {
+        console.error("Failed to create tmp directory:", error);
+        reject(new Error("Failed to create temporary directory"));
+        return;
+      }
     }
 
     const pythonProcess = spawn("python3", [pythonScriptPath]);
@@ -109,18 +127,25 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
     let errorData = "";
 
     pythonProcess.stdout.on("data", (data) => {
+      console.log("Python stdout:", data.toString());
       resultData += data.toString();
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python Error: ${data}`);
+      console.error("Python stderr:", data.toString());
       errorData += data.toString();
     });
 
+    pythonProcess.on("error", (error) => {
+      console.error("Failed to start Python process:", error);
+      reject(new Error(`Failed to start Python process: ${error.message}`));
+    });
+
     pythonProcess.on("close", (code) => {
+      console.log("Python process exited with code:", code);
       if (code !== 0) {
         console.error("Python process error:", errorData);
-        reject(new Error(`Python process failed: ${errorData}`));
+        reject(new Error(`Python process failed with code ${code}: ${errorData}`));
         return;
       }
       try {
