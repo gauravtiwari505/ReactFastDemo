@@ -86,7 +86,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         device.close()
 
 
-def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
+async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
     print("status:Starting analysis...")
 
@@ -222,7 +222,7 @@ def handle_api_call(func):
     return wrapper
 
 @handle_api_call
-def analyze_resume_section(text: str, section_name: str) -> dict:
+async def analyze_resume_section(text: str, section_name: str) -> dict:
     """Analyze a specific section of the resume using Gemini with proper error handling."""
     log_info(f"Starting analysis of section: {section_name}")
 
