@@ -28,7 +28,7 @@ export default function Analysis() {
         <div className="text-center space-y-4">
           <Loader2 className="h-8 w-8 animate-spin mx-auto" />
           <p className="text-muted-foreground" id="analysis-status">
-            Starting analysis...
+            {analysis?.status === "processing" ? analysis.statusMessage || "Processing..." : "Starting analysis..."}
           </p>
         </div>
       </div>

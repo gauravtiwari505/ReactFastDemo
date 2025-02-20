@@ -121,7 +121,12 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Analyze each section with proper rate limiting
         section_results = []
         for section in sections:
-            print(f"status:Analyzing {section.lower()}...")
+            status_msg = f"Analyzing {section.lower()}..."
+            # Update status in database
+            await storage.updateAnalysis(analysis_id, {
+                "status": "processing",
+                "statusMessage": status_msg
+            })
             section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
