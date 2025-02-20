@@ -21,7 +21,7 @@ try {
 
 // Initialize BigQuery with correct project ID
 export const bigquery = new BigQuery({
-  projectId: GOOGLE_CLOUD_PROJECT,  // Use the projectId from environment variable
+  projectId: GOOGLE_CLOUD_PROJECT,
   credentials,
   location: 'US'
 });
@@ -48,16 +48,15 @@ async function ensureTablesExist() {
     });
 
     console.log(`Dataset ${datasetId} ready`);
-    await new Promise(resolve => setTimeout(resolve, retryDelay));
 
     // Define table schemas
     const analysesSchema = [
       { name: 'id', type: 'STRING', mode: 'REQUIRED' },
       { name: 'fileName', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'resumeUploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },  // Renamed from uploadedAt
-      { name: 'analysisFinishedAt', type: 'TIMESTAMP', mode: 'NULLABLE' }, // New column
+      { name: 'resumeUploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },
       { name: 'status', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'results', type: 'STRING', mode: 'NULLABLE' }  // Store JSON as STRING
+      { name: 'statusMessage', type: 'STRING', mode: 'NULLABLE' },  // Added statusMessage column
+      { name: 'results', type: 'STRING', mode: 'NULLABLE' }
     ];
 
     const scoresSchema = [
@@ -66,64 +65,26 @@ async function ensureTablesExist() {
       { name: 'sectionName', type: 'STRING', mode: 'REQUIRED' },
       { name: 'score', type: 'INTEGER', mode: 'REQUIRED' },
       { name: 'feedback', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }  // Store JSON as STRING
+      { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }
     ];
 
-    // Helper function to create table with retries
-    async function createTableWithRetry(tableName: string, schema: any, timePartitioning?: any) {
+    // Drop and recreate tables to apply schema changes
+    const tables = ['resume_analyses', 'resume_scores'];
+    for (const tableName of tables) {
       const table = dataset.table(tableName);
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`Attempt ${attempt} to create/verify table ${tableName}`);
-
-          // Check if table exists
-          const [exists] = await table.exists();
-
-          if (!exists) {
-            // Create new table with full options
-            const createOptions = {
-              schema,
-              location: 'US',
-              ...(timePartitioning && { timePartitioning })
-            };
-
-            await dataset.createTable(tableName, createOptions);
-            console.log(`Created table: ${tableName}`);
-
-            // Wait after creation
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-          } else {
-            console.log(`Table ${tableName} already exists, skipping creation`);
-          }
-
-          // Verify table exists and is accessible
-          const [tableExists] = await table.exists();
-          if (!tableExists) {
-            throw new Error(`Table ${tableName} was not created successfully`);
-          }
-
-          // Try to query the table
-          const query = `SELECT 1 FROM \`${GOOGLE_CLOUD_PROJECT}.${datasetId}.${tableName}\` LIMIT 0`;
-          await bigquery.query({ query });
-
-          console.log(`Successfully verified table ${tableName} exists and is queryable`);
-          return;
-        } catch (error: any) {
-          console.warn(`Attempt ${attempt} failed for ${tableName}: ${error.message}`);
-          if (attempt === maxRetries) throw error;
-          await new Promise(resolve => setTimeout(resolve, retryDelay * attempt)); // Exponential backoff
-        }
+      const [exists] = await table.exists();
+      if (exists) {
+        await table.delete();
+        console.log(`Deleted existing table: ${tableName}`);
       }
+
+      const schema = tableName === 'resume_analyses' ? analysesSchema : scoresSchema;
+      await dataset.createTable(tableName, {
+        schema,
+        location: 'US'
+      });
+      console.log(`Created table: ${tableName} with updated schema`);
     }
-
-    // Create tables with retries
-    await createTableWithRetry('resume_analyses', analysesSchema, {
-      type: 'DAY',
-      field: 'resumeUploadedAt'
-    });
-
-    await createTableWithRetry('resume_scores', scoresSchema);
 
   } catch (error) {
     console.error('Error setting up BigQuery:', error);
