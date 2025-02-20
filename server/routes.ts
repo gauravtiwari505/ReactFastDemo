@@ -11,6 +11,7 @@ import { spawn } from "child_process";
 const upload = multer({ 
   storage: multer.memoryStorage(),
   fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+    console.log("Received file:", file.originalname, "with mimetype:", file.mimetype);
     if (file.mimetype === "application/pdf") {
       cb(null, true);
     } else {
@@ -119,21 +120,27 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
 export function registerRoutes(app: Express): Server {
   app.post("/api/analyze", upload.single("resume"), async (req, res) => {
+    console.log("Analyze endpoint hit");
     const file = req.file as Express.Multer.File | undefined;
+
     if (!file) {
-      return res.status(400).json({ message: "No PDF file provided" });
+      console.error("No file received or invalid file type");
+      return res.status(400).json({ message: "No PDF file provided or invalid file type" });
     }
 
     try {
+      console.log("Creating analysis record for file:", file.originalname);
       const analysis = await storage.createAnalysis({
         fileName: file.originalname,
         uploadedAt: new Date().toISOString(),
         status: "processing"
       });
 
+      console.log("Starting Python analysis process");
       // Process the PDF using our Python service
       const results = await analyzePDF(file.buffer, file.originalname);
 
+      console.log("Analysis complete, updating record");
       // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
@@ -142,6 +149,7 @@ export function registerRoutes(app: Express): Server {
 
       // Store section scores
       if (results.sections) {
+        console.log("Storing section scores");
         for (const section of results.sections) {
           await storage.createScore({
             analysisId: analysis.id,
@@ -157,7 +165,11 @@ export function registerRoutes(app: Express): Server {
       res.json(updatedAnalysis);
     } catch (error) {
       console.error("Analysis error:", error);
-      res.status(500).json({ message: "Failed to analyze resume" });
+      console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace available");
+      res.status(500).json({ 
+        message: "Failed to analyze resume",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
