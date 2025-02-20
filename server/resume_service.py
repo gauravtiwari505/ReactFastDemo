@@ -408,8 +408,9 @@ if __name__ == "__main__":
         file_bytes = base64.b64decode(input_data["file_bytes"])
         filename = input_data["filename"]
         
-        # Analyze the resume
-        results = analyze_resume(file_bytes, filename)
+        # Run the async function using asyncio
+        import asyncio
+        results = asyncio.run(analyze_resume(file_bytes, filename))
         
         # Ensure the results are JSON serializable and properly formatted
         output = json.dumps(results, ensure_ascii=False)
