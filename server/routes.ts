@@ -7,6 +7,14 @@ import type { Request } from "express";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import { spawn } from "child_process";
+import path from "path";
+import fs from "fs";
+
+// Create tmp directory if it doesn't exist
+const TMP_DIR = path.join(process.cwd(), 'tmp');
+if (!fs.existsSync(TMP_DIR)) {
+  fs.mkdirSync(TMP_DIR, { recursive: true });
+}
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -85,9 +93,20 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
 
 async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    const pythonProcess = spawn("python", ["server/resume_service.py"]);
+    // Use absolute path for Python script
+    const pythonScriptPath = path.join(process.cwd(), "server", "resume_service.py");
+    console.log("Python script path:", pythonScriptPath);
+
+    if (!fs.existsSync(pythonScriptPath)) {
+      console.error("Python script not found at:", pythonScriptPath);
+      reject(new Error("Analysis script not found"));
+      return;
+    }
+
+    const pythonProcess = spawn("python3", [pythonScriptPath]);
 
     let resultData = "";
+    let errorData = "";
 
     pythonProcess.stdout.on("data", (data) => {
       resultData += data.toString();
@@ -95,18 +114,21 @@ async function analyzePDF(fileBuffer: Buffer, filename: string): Promise<any> {
 
     pythonProcess.stderr.on("data", (data) => {
       console.error(`Python Error: ${data}`);
+      errorData += data.toString();
     });
 
     pythonProcess.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}`));
+        console.error("Python process error:", errorData);
+        reject(new Error(`Python process failed: ${errorData}`));
         return;
       }
       try {
         const results = JSON.parse(resultData);
         resolve(results);
       } catch (err) {
-        reject(new Error("Failed to parse Python output"));
+        console.error("Failed to parse Python output:", resultData);
+        reject(new Error("Failed to parse analysis results"));
       }
     });
 
@@ -137,17 +159,14 @@ export function registerRoutes(app: Express): Server {
       });
 
       console.log("Starting Python analysis process");
-      // Process the PDF using our Python service
       const results = await analyzePDF(file.buffer, file.originalname);
 
       console.log("Analysis complete, updating record");
-      // Update analysis with results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
         results: results
       });
 
-      // Store section scores
       if (results.sections) {
         console.log("Storing section scores");
         for (const section of results.sections) {
