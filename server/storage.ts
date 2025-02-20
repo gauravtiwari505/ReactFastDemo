@@ -8,15 +8,14 @@ import type {
 
 const DATASET = 'gigflick';
 
-// Get credentials and project ID
-const credentials = JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}');
-const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || credentials.project_id;
+// Get project ID from the initialized BigQuery instance
+const PROJECT_ID = (bigquery as any)._options.projectId;
 
 if (!PROJECT_ID) {
-  throw new Error('Project ID not found in BIGQUERY_CREDENTIALS or GOOGLE_CLOUD_PROJECT');
+  throw new Error('Project ID not found in BigQuery configuration');
 }
 
-console.log('Using BigQuery Project ID:', PROJECT_ID);
+console.log('Storage: Using BigQuery Project ID:', PROJECT_ID);
 
 export interface IStorage {
   createAnalysis(analysis: InsertAnalysis): Promise<ResumeAnalysis>;
