@@ -1,3 +1,12 @@
+
+export type AnalysisProgress = {
+  currentStage: string;
+  progress: number;
+  isComplete: boolean;
+};
+
+export type AnalysisStatus = "idle" | "uploading" | "analyzing" | "completed" | "error";
+
 import { z } from "zod";
 
 // Type definitions for BigQuery tables
