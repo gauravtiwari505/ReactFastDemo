@@ -25,7 +25,12 @@ export default function Analysis() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+          <p className="text-muted-foreground" id="analysis-status">
+            Starting analysis...
+          </p>
+        </div>
       </div>
     );
   }

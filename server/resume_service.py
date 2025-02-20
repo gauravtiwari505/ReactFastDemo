@@ -88,7 +88,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
-    log_info("Starting resume analysis...")
+    print("status:Starting analysis...")
 
     temp_file_path = save_uploaded_file(file_bytes, filename)
     log_info(f"Saved file to {temp_file_path}")
@@ -121,7 +121,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Analyze each section with proper rate limiting
         section_results = []
         for section in sections:
-            log_info(f"Analyzing section: {section}")
+            print(f"status:Analyzing {section.lower()}...")
             section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
