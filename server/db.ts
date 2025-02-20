@@ -4,9 +4,9 @@ import { config } from 'dotenv';
 // Load environment variables
 config();
 
-const { GOOGLE_CLOUD_PROJECT, GOOGLE_CREDENTIALS } = process.env;
+const { GOOGLE_CLOUD_PROJECT, BIGQUERY_CREDENTIALS } = process.env;
 
-if (!GOOGLE_CLOUD_PROJECT || !GOOGLE_CREDENTIALS) {
+if (!GOOGLE_CLOUD_PROJECT || !BIGQUERY_CREDENTIALS) {
   throw new Error(
     "GOOGLE_CLOUD_PROJECT and GOOGLE_CREDENTIALS must be set in your environment variables."
   );
@@ -16,7 +16,7 @@ let credentials;
 try {
   // Parse and validate credentials
   console.log('Attempting to parse Google credentials...');
-  credentials = JSON.parse(GOOGLE_CREDENTIALS);
+  credentials = JSON.parse(BIGQUERY_CREDENTIALS);
 
   // Validate required credential fields
   const requiredFields = ['client_email', 'private_key', 'project_id'];
@@ -48,7 +48,7 @@ try {
 
 } catch (error) {
   console.error('Error parsing Google credentials:', error);
-  throw new Error("Invalid GOOGLE_CREDENTIALS format: " + error.message);
+  throw new Error("Invalid BIGQUERY_CREDENTIALS format: " + error.message);
 }
 
 // Initialize BigQuery with credentials

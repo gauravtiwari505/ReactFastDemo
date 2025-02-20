@@ -1,9 +1,9 @@
-import { BigQuery } from '@google-cloud/bigquery';
-import { randomUUID } from 'crypto';
+import { BigQuery } from "@google-cloud/bigquery";
+import { randomUUID } from "crypto";
 
 const bigquery = new BigQuery({
   projectId: process.env.GOOGLE_CLOUD_PROJECT,
-  credentials: JSON.parse(process.env.BIGQUERY_CREDENTIALS || '{}'),
+  credentials: JSON.parse(process.env.BIGQUERY_CREDENTIALS || "{}"),
 });
 
 export interface ResumeAnalysis {
@@ -22,7 +22,9 @@ export interface ResumeScore {
   feedback: string;
 }
 
-export async function analyzeResume(documentId: string): Promise<ResumeAnalysis> {
+export async function analyzeResume(
+  documentId: string,
+): Promise<ResumeAnalysis> {
   const analysisId = randomUUID();
   const timestamp = new Date().toISOString();
 
@@ -32,10 +34,17 @@ export async function analyzeResume(documentId: string): Promise<ResumeAnalysis>
     (id, document_id, candidate_name, score, feedback, timestamp)
     VALUES(?, ?, ?, ?, ?, ?)
   `;
-  
+
   await bigquery.query({
     query: analysisQuery,
-    params: [analysisId, documentId, "Test Candidate", 85, "Good resume overall", timestamp]
+    params: [
+      analysisId,
+      documentId,
+      "Test Candidate",
+      85,
+      "Good resume overall",
+      timestamp,
+    ],
   });
 
   return {
@@ -43,11 +52,13 @@ export async function analyzeResume(documentId: string): Promise<ResumeAnalysis>
     candidateName: "Test Candidate",
     score: 85,
     feedback: "Good resume overall",
-    timestamp
+    timestamp,
   };
 }
 
-export async function getResumeAnalysis(analysisId: string): Promise<ResumeAnalysis | null> {
+export async function getResumeAnalysis(
+  analysisId: string,
+): Promise<ResumeAnalysis | null> {
   const query = `
     SELECT id, candidate_name as candidateName, score, feedback, timestamp
     FROM \`${process.env.GOOGLE_CLOUD_PROJECT}.gigflick.resume_analysis\`
@@ -56,13 +67,15 @@ export async function getResumeAnalysis(analysisId: string): Promise<ResumeAnaly
 
   const [rows] = await bigquery.query({
     query,
-    params: [analysisId]
+    params: [analysisId],
   });
 
   return rows[0] || null;
 }
 
-export async function saveResumeScore(score: Omit<ResumeScore, "id">): Promise<ResumeScore> {
+export async function saveResumeScore(
+  score: Omit<ResumeScore, "id">,
+): Promise<ResumeScore> {
   const id = randomUUID();
   const scoreQuery = `
     INSERT INTO \`${process.env.GOOGLE_CLOUD_PROJECT}.gigflick.resume_scores\`
@@ -72,11 +85,17 @@ export async function saveResumeScore(score: Omit<ResumeScore, "id">): Promise<R
 
   await bigquery.query({
     query: scoreQuery,
-    params: [id, score.analysisId, score.sectionName, score.score, score.feedback]
+    params: [
+      id,
+      score.analysisId,
+      score.sectionName,
+      score.score,
+      score.feedback,
+    ],
   });
 
   return {
     id,
-    ...score
+    ...score,
   };
 }
