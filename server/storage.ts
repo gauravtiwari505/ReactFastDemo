@@ -8,11 +8,11 @@ import type {
 
 const DATASET = 'gigflick';
 
-// Get project ID from the initialized BigQuery instance
-const PROJECT_ID = (bigquery as any)._options.projectId;
+// Get project ID from environment variables to be consistent with db.ts
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
 
 if (!PROJECT_ID) {
-  throw new Error('Project ID not found in BigQuery configuration');
+  throw new Error('GOOGLE_CLOUD_PROJECT environment variable is required');
 }
 
 console.log('Storage: Using BigQuery Project ID:', PROJECT_ID);
