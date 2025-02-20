@@ -91,6 +91,87 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             device.close()
         output_string.close()
 
+def analyze_resume_section(text: str, section_name: str) -> dict:
+    """Analyze a specific section of the resume using Gemini with proper error handling."""
+    log_info(f"Starting analysis of section: {section_name}")
+
+    prompts = {
+        "Contact Information": """Extract and evaluate the contact information...""",
+        "Professional Summary": """Extract and evaluate the summary/objective section...""",
+        "Work Experience": """Extract and evaluate all work experiences...""",
+        "Skills": """Analyze the skills section...""",
+        "Education": """Extract and evaluate all educational background...""",
+        "Languages": """Extract and evaluate language proficiencies...""",
+        "Projects": """Extract and evaluate all projects...""",
+        "Certifications": """Extract and evaluate all certifications..."""
+    }
+
+    prompt = f"""Analyze the following resume section: {section_name}
+
+    Text to analyze:
+    {text}
+
+    {prompts.get(section_name, prompts["Work Experience"])}
+
+    Important: Respond with ONLY a JSON object that has exactly these keys:
+    {{
+        "score": <number 0-100>,
+        "content": <string evaluation>,
+        "suggestions": [<array of string suggestions>]
+    }}"""
+
+    try:
+        log_info(f"Sending request to Gemini for section: {section_name}")
+        response = model.generate_content(prompt)
+
+        if not response or not response.text:
+            raise ValueError("Empty response from Gemini")
+
+        log_info(f"Received response for section: {section_name}")
+        log_info(f"Raw response preview: {response.text[:200]}...")
+
+        result = extract_json_response(response.text)
+        validate_section_result(result)
+
+        log_info(f"Successfully analyzed section: {section_name}")
+        return result
+    except Exception as e:
+        log_error(f"Error analyzing section {section_name}: {str(e)}")
+        return {
+            "score": 0,
+            "content": f"Analysis failed: {str(e)}",
+            "suggestions": ["Error during analysis"]
+        }
+
+def generate_overview(text: str) -> dict:
+    """Generate an overview analysis of the entire resume using Gemini."""
+    formatted_prompt = f"""Analyze this resume and provide a comprehensive evaluation.
+    Focus on specific, actionable insights for improving the resume.
+    Consider format, content quality, and professional impact.
+
+    Important: Respond with ONLY a JSON object that has exactly these keys:
+    {{
+        "overview": <string with 2-3 sentence professional overview>,
+        "strengths": [<array of 3 specific resume strengths>],
+        "weaknesses": [<array of 3 specific areas for improvement>]
+    }}
+
+    Resume text:
+    {text}"""
+
+    try:
+        response = model.generate_content(formatted_prompt)
+        result = extract_json_response(response.text)
+        validate_overview_result(result)
+        return result
+    except Exception as e:
+        log_error(f"Error generating overview: {str(e)}")
+        return {
+            "overview": f"Analysis failed: {str(e)}",
+            "strengths": ["Not available due to error"],
+            "weaknesses": ["Not available due to error"]
+        }
+
 async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
     log_progress("Starting your resume analysis...")
@@ -110,7 +191,7 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
         # Generate overview analysis with rate limiting
         log_progress("Analyzing your overall resume profile...")
-        overview_analysis = generate_overview(full_text)
+        overview_analysis = await generate_overview(full_text)
         log_info("Generated overview analysis")
 
         # Define sections to analyze
@@ -129,7 +210,7 @@ async def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         section_results = []
         for section in sections:
             log_progress(f"Evaluating your {section.lower()}...")
-            section_analysis = analyze_resume_section(full_text, section)
+            section_analysis = await analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
                 **section_analysis
@@ -312,7 +393,7 @@ async def analyze_resume_section(text: str, section_name: str) -> dict:
             raise ValueError("Empty response from Gemini")
 
         log_info(f"Received response for section: {section_name}")
-        log_info(f"Raw response preview: {response.text[:200]}...")  # Log first 200 chars
+        log_info(f"Raw response preview: {response.text[:200]}...")
 
         result = extract_json_response(response.text)
         validate_section_result(result)
