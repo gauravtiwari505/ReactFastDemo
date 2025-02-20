@@ -20,9 +20,8 @@ def log_info(msg: str):
     print(msg, file=sys.stderr)
 
 def log_progress(msg: str):
-    """Helper function for logging progress messages that will be shown to user"""
-    progress_msg = json.dumps({"type": "progress", "message": msg})
-    print(f"PROGRESS:{progress_msg}", flush=True)
+    """Helper function for logging progress messages"""
+    print(f"PROGRESS: {msg}", file=sys.stderr)
 
 # Initialize Gemini
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
@@ -41,7 +40,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 def analyze_resume_section(text: str, section_name: str) -> dict:
     """Analyze a specific section of the resume using Gemini."""
-    log_info(f"Starting analysis of section: {section_name}")
+    log_progress(f"Analyzing {section_name}...")
 
     prompt = f"""Analyze the following resume section: {section_name}
 
@@ -70,7 +69,7 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
 
 def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling."""
-    log_progress("Starting your resume analysis...")
+    log_progress("Starting resume analysis...")
 
     temp_file_path = os.path.join(TMP_DIR, filename)
     with open(temp_file_path, "wb") as temp_file:
@@ -78,12 +77,12 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
     try:
         # Extract text from PDF
-        log_progress("Reading and extracting content from your resume...")
+        log_progress("Extracting content from PDF...")
         full_text = extract_text_from_pdf(temp_file_path)
-        log_info(f"Successfully extracted {len(full_text)} characters of text")
+        log_info(f"Extracted {len(full_text)} characters of text")
 
         # Analyze overall profile
-        log_progress("Analyzing your overall resume profile...")
+        log_progress("Analyzing overall profile...")
         overview_prompt = """Analyze this resume and provide a comprehensive evaluation.
         Focus on specific, actionable insights. Output a JSON with:
         {
@@ -108,7 +107,6 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Analyze each section
         section_results = []
         for section in sections:
-            log_progress(f"Evaluating your {section.lower()}...")
             section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
@@ -127,7 +125,8 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             "overallScore": round(overall_score)
         }
 
-        log_progress("Analysis complete! Preparing your detailed report...")
+        log_progress("Analysis complete!")
+        print(json.dumps(results))  # Print results to stdout
         return results
 
     except Exception as e:
@@ -171,10 +170,7 @@ if __name__ == "__main__":
         filename = input_data["filename"]
 
         # Analyze the resume
-        results = analyze_resume(file_bytes, filename)
-
-        # Send results back to Node.js
-        print(json.dumps(results))
+        analyze_resume(file_bytes, filename)
         sys.exit(0)
     except Exception as e:
         log_error(f"Error during analysis: {str(e)}")

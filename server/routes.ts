@@ -85,30 +85,55 @@ async function generateAnalysisPDF(analysis: any): Promise<Buffer> {
 async function analyzePDF(fileBuffer: Buffer, filename: string, analysisId: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const pythonProcess = spawn("python", ["server/resume_service.py"]);
-
     let resultData = "";
+    let errorData = "";
 
     pythonProcess.stdout.on("data", (data) => {
       resultData += data.toString();
     });
 
-    pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python Error: ${data}`);
+    pythonProcess.stderr.on("data", async (data) => {
+      const message = data.toString();
+      errorData += message;
+
+      // Handle progress messages
+      if (message.includes("PROGRESS: ")) {
+        const progressMessage = message.split("PROGRESS: ")[1].trim();
+        try {
+          await storage.updateAnalysis(analysisId, {
+            status: "processing",
+            results: {
+              overview: progressMessage,
+              strengths: [],
+              weaknesses: [],
+              sections: [],
+              overallScore: 0
+            }
+          });
+        } catch (err) {
+          console.error("Error updating analysis status:", err);
+        }
+      }
     });
 
     pythonProcess.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}`));
+        console.error("Python process error output:", errorData);
+        reject(new Error(`Analysis failed with code ${code}`));
         return;
       }
+
       try {
         const results = JSON.parse(resultData);
         resolve(results);
       } catch (err) {
-        reject(new Error("Failed to parse Python output"));
+        console.error("Error parsing Python output:", err);
+        console.error("Raw output:", resultData);
+        reject(new Error("Failed to parse analysis results"));
       }
     });
 
+    // Send data to Python process
     pythonProcess.stdin.write(JSON.stringify({
       file_bytes: fileBuffer.toString("base64"),
       filename: filename
@@ -125,6 +150,7 @@ export function registerRoutes(app: Express): Server {
     }
 
     try {
+      // Create initial analysis record
       const analysis = await storage.createAnalysis({
         fileName: file.originalname,
         uploadedAt: new Date().toISOString(),
@@ -134,10 +160,10 @@ export function registerRoutes(app: Express): Server {
       // Process the PDF using our Python service
       const results = await analyzePDF(file.buffer, file.originalname, analysis.id);
 
-      // Update analysis with results
+      // Update analysis with final results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
         status: "completed",
-        results: results
+        results
       });
 
       // Store section scores
