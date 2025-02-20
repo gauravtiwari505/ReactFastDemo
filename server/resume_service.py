@@ -93,27 +93,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Process and analyze a resume with improved error handling and rate limiting."""
-    stages = [
-        "Extracting Text",
-        "Analyzing Contact Information",
-        "Analyzing Professional Summary",
-        "Analyzing Work Experience",
-        "Analyzing Skills",
-        "Analyzing Education",
-        "Analyzing Languages",
-        "Analyzing Projects",
-        "Analyzing Certifications"
-    ]
-    
-    current_stage_index = 0
-    def update_progress(stage: str):
-        nonlocal current_stage_index
-        current_stage_index += 1
-        progress = (current_stage_index / len(stages)) * 100
-        store_progress(filename, stage, progress)
-        
     log_info("Starting resume analysis...")
-    update_progress("Extracting Text")
 
     temp_file_path = save_uploaded_file(file_bytes, filename)
     log_info(f"Saved file to {temp_file_path}")

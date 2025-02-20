@@ -15,15 +15,7 @@ import EmailPdfDialog from "@/components/email-pdf-dialog";
 export default function Analysis() {
   const { id } = useParams();
 
-  const { data: progressData } = useQuery<AnalysisProgress>({
-  queryKey: [`/api/progress/${id}`],
-  refetchInterval: (data) => {
-    return data?.isComplete ? false : 1000;
-  },
-  enabled: analysis?.status === "processing"
-});
-
-const { data: analysis, isLoading } = useQuery<Analysis>({
+  const { data: analysis, isLoading } = useQuery<Analysis>({
     queryKey: [`/api/analysis/${id}`],
     refetchInterval: (data) => {
       return data?.status === "processing" ? 1000 : false;
@@ -76,19 +68,10 @@ const { data: analysis, isLoading } = useQuery<Analysis>({
         {analysis.status === "processing" ? (
           <Card>
             <CardContent className="pt-6">
-              <h2 className="text-lg font-semibold mb-4">
-                {analysis.status === "completed" 
-                  ? "Analysis Complete!" 
-                  : progressData?.currentStage || "Starting Analysis..."}
-              </h2>
-              <Progress 
-                value={progressData?.progress || 0} 
-                className="mb-2" 
-              />
+              <h2 className="text-lg font-semibold mb-4">Analyzing Resume...</h2>
+              <Progress value={40} className="mb-2" />
               <p className="text-sm text-muted-foreground">
-                {progressData?.isComplete 
-                  ? "Preparing results..." 
-                  : "This usually takes a few seconds"}
+                This usually takes a few seconds
               </p>
             </CardContent>
           </Card>
