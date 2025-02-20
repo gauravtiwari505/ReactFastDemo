@@ -88,22 +88,8 @@ async function analyzePDF(fileBuffer: Buffer, filename: string, analysisId: stri
 
     let resultData = "";
 
-    pythonProcess.stdout.on("data", async (data) => {
-      const message = data.toString();
-      if (message.startsWith('PROGRESS:')) {
-        try {
-          const progressData = JSON.parse(message.replace('PROGRESS:', ''));
-          // Update analysis status message
-          await storage.updateAnalysis(analysisId, {
-            status: "processing",
-            statusMessage: progressData.message
-          });
-        } catch (err) {
-          console.error("Error parsing progress message:", err);
-        }
-      } else {
-        resultData += message;
-      }
+    pythonProcess.stdout.on("data", (data) => {
+      resultData += data.toString();
     });
 
     pythonProcess.stderr.on("data", (data) => {

@@ -26,11 +26,9 @@ export const bigquery = new BigQuery({
   location: 'US'
 });
 
-// Create dataset and tables if they don't exist
-async function ensureTablesExist() {
+// Initialize dataset if it doesn't exist
+async function ensureDatasetExists() {
   const datasetId = 'gigflick';
-  const retryDelay = 3000; // 3 seconds delay between retries
-  const maxRetries = 3;
 
   try {
     // Verify BigQuery permissions first
@@ -49,43 +47,6 @@ async function ensureTablesExist() {
 
     console.log(`Dataset ${datasetId} ready`);
 
-    // Define table schemas
-    const analysesSchema = [
-      { name: 'id', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'fileName', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'resumeUploadedAt', type: 'TIMESTAMP', mode: 'REQUIRED' },
-      { name: 'status', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'statusMessage', type: 'STRING', mode: 'NULLABLE' },  // Added statusMessage column
-      { name: 'results', type: 'STRING', mode: 'NULLABLE' }
-    ];
-
-    const scoresSchema = [
-      { name: 'id', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'analysisId', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'sectionName', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'score', type: 'INTEGER', mode: 'REQUIRED' },
-      { name: 'feedback', type: 'STRING', mode: 'REQUIRED' },
-      { name: 'suggestions', type: 'STRING', mode: 'REQUIRED' }
-    ];
-
-    // Drop and recreate tables to apply schema changes
-    const tables = ['resume_analyses', 'resume_scores'];
-    for (const tableName of tables) {
-      const table = dataset.table(tableName);
-      const [exists] = await table.exists();
-      if (exists) {
-        await table.delete();
-        console.log(`Deleted existing table: ${tableName}`);
-      }
-
-      const schema = tableName === 'resume_analyses' ? analysesSchema : scoresSchema;
-      await dataset.createTable(tableName, {
-        schema,
-        location: 'US'
-      });
-      console.log(`Created table: ${tableName} with updated schema`);
-    }
-
   } catch (error) {
     console.error('Error setting up BigQuery:', error);
     throw error;
@@ -93,6 +54,6 @@ async function ensureTablesExist() {
 }
 
 // Initialize BigQuery setup
-ensureTablesExist().catch(console.error);
+ensureDatasetExists().catch(console.error);
 
 export const db = bigquery;

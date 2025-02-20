@@ -61,7 +61,6 @@ export class BigQueryStorage implements IStorage {
         fileName: insertAnalysis.fileName,
         resumeUploadedAt: timestamp,
         status: insertAnalysis.status,
-        statusMessage: insertAnalysis.statusMessage || 'Starting analysis...',
         results: JSON.stringify({})
       };
 
@@ -69,8 +68,8 @@ export class BigQueryStorage implements IStorage {
 
       const insertQuery = `
         INSERT INTO \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-        (id, fileName, resumeUploadedAt, status, statusMessage, results)
-        VALUES(@id, @fileName, @resumeUploadedAt, @status, @statusMessage, @results)
+        (id, fileName, resumeUploadedAt, status, results)
+        VALUES(@id, @fileName, @resumeUploadedAt, @status, @results)
       `;
 
       await bigquery.query({
@@ -85,7 +84,6 @@ export class BigQueryStorage implements IStorage {
         fileName: insertAnalysis.fileName,
         uploadedAt: timestamp,
         status: insertAnalysis.status,
-        statusMessage: insertAnalysis.statusMessage,
         results: {}
       };
     } catch (error: any) {
@@ -104,7 +102,6 @@ export class BigQueryStorage implements IStorage {
             fileName,
             resumeUploadedAt as uploadedAt,
             status,
-            statusMessage,
             results
           FROM \`${PROJECT_ID}.${DATASET}.resume_analyses\`
           WHERE id = @id
@@ -128,23 +125,14 @@ export class BigQueryStorage implements IStorage {
     try {
       await this.verifyTableAccess('resume_analyses');
 
-      // Prepare the update data - explicitly handle each field type
-      const updateData: Record<string, any> = {};
+      // Prepare update data
+      const updateData: any = {
+        ...update,
+        results: update.results ? JSON.stringify(update.results) : undefined
+      };
 
-      if (update.status) {
-        updateData.status = update.status;
-      }
-
-      if (update.statusMessage) {
-        updateData.statusMessage = update.statusMessage;
-      }
-
-      if (update.results) {
-        updateData.results = JSON.stringify(update.results);
-      }
-
-      // Only include fields that are being updated
       const setClause = Object.entries(updateData)
+        .filter(([_, value]) => value !== undefined)
         .map(([key, _]) => `${key} = @${key}`)
         .join(', ');
 

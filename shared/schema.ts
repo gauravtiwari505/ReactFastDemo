@@ -6,7 +6,6 @@ export const resumeAnalysisSchema = z.object({
   fileName: z.string(),
   uploadedAt: z.string(),  // Keep the old name in the interface for backward compatibility
   status: z.string(),
-  statusMessage: z.string().optional(),
   results: z.object({
     overview: z.string(),
     strengths: z.array(z.string()),
