@@ -1,12 +1,5 @@
 import google.generativeai as genai
 from pdfminer.high_level import extract_text
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.layout import LAParams
-from pdfminer.converter import TextConverter
-from io import StringIO
 import os
 from dotenv import load_dotenv
 import sys
@@ -16,7 +9,31 @@ from pathlib import Path
 import time
 import traceback
 from typing import Dict, Any, List
-from datetime import datetime, timedelta
+
+# Load environment variables
+load_dotenv()
+
+# Access environment variables
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY environment variable is not set")
+
+# Initialize Gemini globally
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Initialize Gemini model with error handling
+try:
+    model = genai.GenerativeModel('gemini-1.5-flash')  # Using flash model for higher rate limits
+    print("Successfully initialized Gemini model", file=sys.stderr)
+except Exception as e:
+    print(f"Error initializing Gemini model: {str(e)}", file=sys.stderr)
+    raise
+
+# Log environment setup
+print("Environment setup:", file=sys.stderr)
+print(f"GOOGLE_API_KEY present: {bool(GOOGLE_API_KEY)}", file=sys.stderr)
+print(f"GOOGLE_CREDENTIALS present: {bool(os.getenv('GOOGLE_CREDENTIALS'))}", file=sys.stderr)
+print(f"GOOGLE_CLOUD_PROJECT present: {bool(os.getenv('GOOGLE_CLOUD_PROJECT'))}", file=sys.stderr)
 
 
 # Define logging functions first
@@ -32,24 +49,6 @@ def log_info(msg: str):
     """Helper function for logging informational messages"""
     print(msg, file=sys.stderr)
 
-
-# Load environment variables
-load_dotenv()
-
-# Access environment variables
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY environment variable is not set")
-
-# Initialize Gemini globally
-genai.configure(api_key=GOOGLE_API_KEY)
-try:
-    model = genai.GenerativeModel(
-        'gemini-1.5-flash')  # Using flash model for higher rate limits
-    log_info("Successfully initialized Gemini model")
-except Exception as e:
-    log_error(f"Failed to initialize Gemini: {str(e)}")
-    raise
 
 TMP_DIR = Path("./tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
@@ -460,3 +459,12 @@ if __name__ == "__main__":
         log_error(f"Error during analysis: {str(e)}")
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
+
+from io import StringIO
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+from pdfminer.layout import LAParams
+from pdfminer.converter import TextConverter
+from datetime import datetime, timedelta

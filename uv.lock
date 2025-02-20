@@ -1446,6 +1446,7 @@ dependencies = [
     { name = "langchain-community" },
     { name = "openai" },
     { name = "pdfminer-six" },
+    { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "tiktoken" },
 ]
@@ -1460,6 +1461,7 @@ requires-dist = [
     { name = "langchain-community", specifier = ">=0.3.17" },
     { name = "openai", specifier = ">=1.61.1" },
     { name = "pdfminer-six", specifier = ">=20240706" },
+    { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "tiktoken", specifier = ">=0.8.0" },
 ]

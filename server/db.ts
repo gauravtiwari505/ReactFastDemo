@@ -32,17 +32,23 @@ try {
     );
   }
 
-  // Log a redacted version of credentials for debugging
-  console.log("Credentials validation summary:");
-  console.log(`- Project ID: ${credentials.project_id}`);
-  console.log(`- Client email length: ${credentials.client_email.length}`);
-  console.log(`- Private key present: ${Boolean(credentials.private_key)}`);
-
-  // Ensure private_key has proper newlines
+  // Properly format private key
   if (credentials.private_key) {
+    // Remove any surrounding quotes if present
+    credentials.private_key = credentials.private_key.replace(/^["']|["']$/g, '');
+    // Replace escaped newlines with actual newlines
     credentials.private_key = credentials.private_key
       .replace(/\\n/g, "\n")
-      .replace(/\\"/g, '"');
+      .replace(/\\r/g, "\r")
+      .replace(/\\\\/g, "\\");
+
+    // Ensure the key starts and ends with the correct markers
+    if (!credentials.private_key.includes("-----BEGIN PRIVATE KEY-----")) {
+      throw new Error("Invalid private key format: Missing BEGIN marker");
+    }
+    if (!credentials.private_key.includes("-----END PRIVATE KEY-----")) {
+      throw new Error("Invalid private key format: Missing END marker");
+    }
   }
 
   // Log important verification details
@@ -74,7 +80,6 @@ export const bigquery = new BigQuery({
     client_email: credentials.client_email,
     private_key: credentials.private_key,
   },
-  location: "US",
 });
 
 // Create dataset and tables if they don't exist
@@ -151,24 +156,17 @@ async function ensureTablesExist() {
 
             await dataset.createTable(tableName, createOptions);
             console.log(`Created table: ${tableName}`);
-            await new Promise((resolve) => setTimeout(resolve, retryDelay));
           } else {
             console.log(`Table ${tableName} already exists`);
           }
 
-          // Verify table exists and is accessible
-          const [tableExists] = await table.exists();
-          if (!tableExists) {
-            throw new Error(`Table ${tableName} was not created successfully`);
-          }
-
-          // Try to query the table
+          // Try to query the table to verify access
           const query = `SELECT 1 FROM \`${credentials.project_id}.${datasetId}.${tableName}\` LIMIT 0`;
           await bigquery.query({ query });
 
           console.log(`Successfully verified table ${tableName}`);
           return;
-        } catch (error: any) {
+        } catch (error) {
           console.error(`Attempt ${attempt} failed for ${tableName}:`, error);
           if (attempt === maxRetries) throw error;
           await new Promise((resolve) =>

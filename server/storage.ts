@@ -36,13 +36,13 @@ export interface IStorage {
 export class BigQueryStorage implements IStorage {
   private async verifyTableAccess(tableName: string): Promise<void> {
     console.log(`Verifying access to table: ${PROJECT_ID}.${DATASET}.${tableName}`);
-    const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
     try {
+      const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
       await bigquery.query({ query });
       console.log(`Successfully verified access to ${tableName}`);
     } catch (error) {
       console.error(`Failed to verify access to ${tableName}:`, error);
-      throw error;
+      throw new Error(`Database access error: ${error.message}`);
     }
   }
 
@@ -56,13 +56,19 @@ export class BigQueryStorage implements IStorage {
       const id = Date.now().toString();
       console.log('Generated ID:', id);
 
-      // Prepare row data
+      // Prepare row data with initial empty results structure
       const row = {
         id,
         fileName: insertAnalysis.fileName,
         resumeUploadedAt: timestamp,
         status: insertAnalysis.status,
-        results: '{}'  // Initialize with empty JSON object
+        results: JSON.stringify({
+          overview: "",
+          strengths: [],
+          weaknesses: [],
+          overallScore: 0,
+          sections: []
+        })
       };
 
       console.log('Attempting to insert row:', JSON.stringify(row));
@@ -81,13 +87,19 @@ export class BigQueryStorage implements IStorage {
 
       console.log('Successfully inserted row');
 
-      // Return the created analysis
+      // Return the created analysis with proper initial structure
       return {
         id,
         fileName: insertAnalysis.fileName,
-        uploadedAt: timestamp,  // Keep the interface consistent
+        uploadedAt: timestamp,
         status: insertAnalysis.status,
-        results: {}
+        results: {
+          overview: "",
+          strengths: [],
+          weaknesses: [],
+          overallScore: 0,
+          sections: []
+        }
       };
     } catch (error: any) {
       console.error('Error in createAnalysis:', error);
