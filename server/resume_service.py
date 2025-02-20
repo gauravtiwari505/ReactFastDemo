@@ -8,6 +8,8 @@ import time
 import traceback
 from typing import Dict, Any
 import asyncio
+import sys
+from datetime import datetime
 
 # Define logging functions
 def log_error(error_msg: str, include_trace: bool = True):
@@ -239,8 +241,6 @@ if __name__ == "__main__":
         filename = input_data["filename"]
 
         # Run the async function using asyncio
-        import asyncio
-        from datetime import datetime
         results = asyncio.run(analyze_resume(file_bytes, filename))
 
         # Ensure the results are JSON serializable and properly formatted
