@@ -16,9 +16,13 @@ let credentials;
 try {
   // Parse and validate credentials
   console.log("Attempting to parse Google credentials...");
+  if (!BIGQUERY_CREDENTIALS) {
+    throw new Error("BIGQUERY_CREDENTIALS is empty or undefined");
+  }
+
   credentials = JSON.parse(BIGQUERY_CREDENTIALS);
 
-  // Validate required credential fields
+  // Validate required fields
   const requiredFields = ["client_email", "private_key", "project_id"];
   const missingFields = requiredFields.filter((field) => !credentials[field]);
 
@@ -27,6 +31,12 @@ try {
       `Missing required fields in credentials: ${missingFields.join(", ")}`,
     );
   }
+
+  // Log a redacted version of credentials for debugging
+  console.log("Credentials validation summary:");
+  console.log(`- Project ID: ${credentials.project_id}`);
+  console.log(`- Client email length: ${credentials.client_email.length}`);
+  console.log(`- Private key present: ${Boolean(credentials.private_key)}`);
 
   // Ensure private_key has proper newlines
   if (credentials.private_key) {
