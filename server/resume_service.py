@@ -82,10 +82,10 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Extract text from PDF
         log_progress("Extracting content from PDF...")
         full_text = extract_text_from_pdf(temp_file_path)
-
+        log_progress(f"Extracted {len(full_text)} characters from PDF")
 
         # Analyze overall profile
-        log_progress("Analyzing overall profile...")
+        log_progress("Starting overall profile analysis...")
         overview_prompt = """Analyze this resume and provide a comprehensive evaluation.
         Focus on specific, actionable insights. Output a JSON with:
         {
@@ -110,13 +110,17 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         ]
 
         # Analyze each section
+        log_progress("Starting section-by-section analysis...")
         section_results = []
-        for section in sections:
+        total_sections = len(sections)
+        for index, section in enumerate(sections, 1):
+            log_progress(f"Analyzing section {index}/{total_sections}: {section}")
             section_analysis = analyze_resume_section(full_text, section)
             section_results.append({
                 "name": section,
                 **section_analysis
             })
+            log_progress(f"Completed {section} analysis with score: {section_analysis['score']}")
 
         # Calculate overall score
         overall_score = sum(section["score"] for section in section_results) / len(section_results) if section_results else 0
