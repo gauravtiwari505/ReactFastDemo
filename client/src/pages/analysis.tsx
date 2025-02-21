@@ -66,15 +66,9 @@ export default function Analysis() {
         </motion.div>
 
         {analysis.status === "processing" ? (
-          <Card>
-            <CardContent className="pt-6">
-              <h2 className="text-lg font-semibold mb-4">Analyzing Resume...</h2>
-              <Progress value={40} className="mb-2" />
-              <p className="text-sm text-muted-foreground">
-                This usually takes a few seconds
-              </p>
-            </CardContent>
-          </Card>
+          <div className="text-center py-8">
+            <h2 className="text-lg font-semibold">Analyzing Resume...</h2>
+          </div>
         ) : (
           <>
             {/* Overview Section */}
