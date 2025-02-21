@@ -136,45 +136,57 @@ export class BigQueryStorage implements IStorage {
   }
 
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
-    try {
-      // Verify access only on initialization
-      if (!this._tableAccessVerified) {
-        await this.verifyTableAccess(this.tables.analyses);
-        this._tableAccessVerified = true;
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+      try {
+        // Verify access only on initialization
+        if (!this._tableAccessVerified) {
+          await this.verifyTableAccess(this.tables.analyses);
+          this._tableAccessVerified = true;
+        }
+
+        // Prepare update data
+        const updateData: any = {
+          ...update,
+          results: update.results ? JSON.stringify(update.results) : undefined
+        };
+
+        const setClause = Object.entries(updateData)
+          .filter(([_, value]) => value !== undefined)
+          .map(([key, _]) => `${key} = @${key}`)
+          .join(', ');
+
+        if (!setClause) {
+          throw new Error('No fields to update');
+        }
+
+        const updateQuery = `
+          UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+          SET ${setClause}
+          WHERE id = @id
+        `;
+
+        await bigquery.query({
+          query: updateQuery,
+          params: { ...updateData, id }
+        });
+
+        return this.getAnalysis(id) as Promise<ResumeAnalysis>;
+    } catch (error: any) {
+      if (error?.code === 400 && error?.errors?.[0]?.reason === 'invalidQuery' && retryCount < maxRetries - 1) {
+        console.log(`Retry attempt ${retryCount + 1} for analysis update`);
+        retryCount++;
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+        continue;
       }
-
-      // Prepare update data
-      const updateData: any = {
-        ...update,
-        results: update.results ? JSON.stringify(update.results) : undefined
-      };
-
-      const setClause = Object.entries(updateData)
-        .filter(([_, value]) => value !== undefined)
-        .map(([key, _]) => `${key} = @${key}`)
-        .join(', ');
-
-      if (!setClause) {
-        throw new Error('No fields to update');
-      }
-
-      const updateQuery = `
-        UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-        SET ${setClause}
-        WHERE id = @id
-      `;
-
-      await bigquery.query({
-        query: updateQuery,
-        params: { ...updateData, id }
-      });
-
-      return this.getAnalysis(id) as Promise<ResumeAnalysis>;
-    } catch (error) {
       console.error('Error in updateAnalysis:', error);
       throw new Error('Failed to update analysis');
     }
   }
+  return this.getAnalysis(id) as Promise<ResumeAnalysis>;
+}
 
   async createScore(insertScore: InsertScore): Promise<ResumeScore> {
     try {
