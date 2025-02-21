@@ -35,6 +35,12 @@ export interface IStorage {
 }
 
 export class BigQueryStorage implements IStorage {
+  private _tableAccessVerified = false; // Flag to track table access verification
+  private tables = {
+    analyses: 'resume_analyses',
+    scores: 'resume_scores'
+  };
+
   private async verifyTableAccess(tableName: string): Promise<void> {
     console.log(`Verifying access to table: ${PROJECT_ID}.${DATASET}.${tableName}`);
     const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
@@ -50,7 +56,11 @@ export class BigQueryStorage implements IStorage {
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
     console.log('Starting createAnalysis...');
     try {
-      await this.verifyTableAccess('resume_analyses');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        this._tableAccessVerified = true;
+      }
 
       const timestamp = new Date().toISOString();
       const id = Date.now().toString();
@@ -94,7 +104,11 @@ export class BigQueryStorage implements IStorage {
 
   async getAnalysis(id: string): Promise<ResumeAnalysis | undefined> {
     try {
-      await this.verifyTableAccess('resume_analyses');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        this._tableAccessVerified = true;
+      }
       const [rows] = await bigquery.query({
         query: `
           SELECT 
@@ -122,45 +136,65 @@ export class BigQueryStorage implements IStorage {
   }
 
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
-    try {
-      await this.verifyTableAccess('resume_analyses');
+    const maxRetries = 3;
+    let retryCount = 0;
 
-      // Prepare update data
-      const updateData: any = {
-        ...update,
-        results: update.results ? JSON.stringify(update.results) : undefined
-      };
+    while (retryCount < maxRetries) {
+      try {
+        // Verify access only on initialization
+        if (!this._tableAccessVerified) {
+          await this.verifyTableAccess(this.tables.analyses);
+          this._tableAccessVerified = true;
+        }
 
-      const setClause = Object.entries(updateData)
-        .filter(([_, value]) => value !== undefined)
-        .map(([key, _]) => `${key} = @${key}`)
-        .join(', ');
+        // Prepare update data
+        const updateData: any = {
+          ...update,
+          results: update.results ? JSON.stringify(update.results) : undefined
+        };
 
-      if (!setClause) {
-        throw new Error('No fields to update');
+        const setClause = Object.entries(updateData)
+          .filter(([_, value]) => value !== undefined)
+          .map(([key, _]) => `${key} = @${key}`)
+          .join(', ');
+
+        if (!setClause) {
+          throw new Error('No fields to update');
+        }
+
+        const updateQuery = `
+          UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
+          SET ${setClause}
+          WHERE id = @id
+        `;
+
+        await bigquery.query({
+          query: updateQuery,
+          params: { ...updateData, id }
+        });
+
+        return this.getAnalysis(id) as Promise<ResumeAnalysis>;
+    } catch (error: any) {
+      if (error?.code === 400 && error?.errors?.[0]?.reason === 'invalidQuery' && retryCount < maxRetries - 1) {
+        console.log(`Retry attempt ${retryCount + 1} for analysis update`);
+        retryCount++;
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+        continue;
       }
-
-      const updateQuery = `
-        UPDATE \`${PROJECT_ID}.${DATASET}.resume_analyses\`
-        SET ${setClause}
-        WHERE id = @id
-      `;
-
-      await bigquery.query({
-        query: updateQuery,
-        params: { ...updateData, id }
-      });
-
-      return this.getAnalysis(id) as Promise<ResumeAnalysis>;
-    } catch (error) {
       console.error('Error in updateAnalysis:', error);
       throw new Error('Failed to update analysis');
     }
   }
+  return this.getAnalysis(id) as Promise<ResumeAnalysis>;
+}
 
   async createScore(insertScore: InsertScore): Promise<ResumeScore> {
     try {
-      await this.verifyTableAccess('resume_scores');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.scores);
+        this._tableAccessVerified = true;
+      }
       const id = Date.now().toString();
 
       const row = {
@@ -207,8 +241,12 @@ export class BigQueryStorage implements IStorage {
 
   async getAnalytics() {
     try {
-      await this.verifyTableAccess('resume_analyses');
-      await this.verifyTableAccess('resume_scores');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        await this.verifyTableAccess(this.tables.scores);
+        this._tableAccessVerified = true;
+      }
       const [rows] = await bigquery.query({
         query: `
           WITH ScoreStats AS (

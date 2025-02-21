@@ -1,0 +1,112 @@
+Error in updateAnalysis: ApiError: Could not serialize access to table resume-analysis-445422:gigflick.resume_analyses due to concurrent update
+    at new ApiError (/home/runner/workspace/node_modules/@google-cloud/common/build/src/util.js:75:15)
+    at Util.parseHttpRespBody (/home/runner/workspace/node_modules/@google-cloud/common/build/src/util.js:210:38)
+    at Util.handleResp (/home/runner/workspace/node_modules/@google-cloud/common/build/src/util.js:151:117)
+    at /home/runner/workspace/node_modules/@google-cloud/common/build/src/util.js:534:22
+    at onResponse (/home/runner/workspace/node_modules/retry-request/index.js:259:7)
+    at <anonymous> (/home/runner/workspace/node_modules/teeny-request/src/index.ts:333:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 400,
+  errors: [
+    {
+      message: 'Could not serialize access to table resume-analysis-445422:gigflick.resume_analyses due to concurrent update',
+      domain: 'global',
+      reason: 'invalidQuery',
+      location: 'q',
+      locationType: 'parameter'
+    }
+  ],
+  response: Gunzip {
+    _writeState: Uint32Array(2) [ 15893, 0 ],
+    _events: {
+      close: undefined,
+      error: [Array],
+      prefinish: [Function: prefinish],
+      finish: undefined,
+      drain: undefined,
+      data: [Function (anonymous)],
+      end: [Function (anonymous)],
+      readable: undefined,
+      unpipe: undefined
+    },
+    _readableState: ReadableState {
+      highWaterMark: 16384,
+      buffer: [],
+      bufferIndex: 0,
+      length: 0,
+      pipes: [],
+      awaitDrainWriters: null,
+      [Symbol(kState)]: 194512764
+    },
+    _writableState: WritableState {
+      highWaterMark: 16384,
+      length: 0,
+      corked: 0,
+      onwrite: [Function: bound onwrite],
+      writelen: 0,
+      bufferedIndex: 0,
+      pendingcb: 0,
+      [Symbol(kState)]: 1091466620,
+      [Symbol(kBufferedValue)]: null,
+      [Symbol(kWriteCbValue)]: null
+    },
+    allowHalfOpen: true,
+    _maxListeners: undefined,
+    _eventsCount: 4,
+    bytesWritten: 251,
+    _handle: null,
+    _outBuffer: <Buffer 7b 0a 20 20 22 65 72 72 6f 72 22 3a 20 7b 0a 20 20 20 20 22 63 6f 64 65 22 3a 20 34 30 30 2c 0a 20 20 20 20 22 6d 65 73 73 61 67 65 22 3a 20 22 43 6f ... 16334 more bytes>,
+    _outOffset: 491,
+    _chunkSize: 16384,
+    _defaultFlushFlag: 2,
+    _finishFlushFlag: 2,
+    _defaultFullFlushFlag: 3,
+    _info: undefined,
+    _maxOutputLength: 4294967296,
+    _level: -1,
+    _strategy: 0,
+    statusCode: 400,
+    statusMessage: 'Bad Request',
+    request: {
+      agent: [Agent],
+      headers: [Object],
+      href: 'https://bigquery.googleapis.com/bigquery/v2/projects/resume-analysis-445422/queries?prettyPrint=false'
+    },
+    body: '{\n' +
+      '  "error": {\n' +
+      '    "code": 400,\n' +
+      '    "message": "Could not serialize access to table resume-analysis-445422:gigflick.resume_analyses due to concurrent update",\n' +
+      '    "errors": [\n' +
+      '      {\n' +
+      '        "message": "Could not serialize access to table resume-analysis-445422:gigflick.resume_analyses due to concurrent update",\n' +
+      '        "domain": "global",\n' +
+      '        "reason": "invalidQuery",\n' +
+      '        "location": "q",\n' +
+      '        "locationType": "parameter"\n' +
+      '      }\n' +
+      '    ],\n' +
+      '    "status": "INVALID_ARGUMENT"\n' +
+      '  }\n' +
+      '}\n',
+    headers: {
+      'content-encoding': 'gzip',
+      'content-type': 'application/json; charset=UTF-8',
+      date: 'Fri, 21 Feb 2025 12:55:08 GMT',
+      server: 'ESF',
+      'transfer-encoding': 'chunked',
+      vary: 'Origin, X-Origin, Referer',
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'SAMEORIGIN',
+      'x-xss-protection': '0'
+    },
+    toJSON: [Function: toJSON],
+    [Symbol(shapeMode)]: true,
+    [Symbol(kCapture)]: false,
+    [Symbol(kCallback)]: null,
+    [Symbol(kError)]: null
+  }
+}
+Error updating analysis status: Error: Failed to update analysis
+    at BigQueryStorage.updateAnalysis (/home/runner/workspace/server/storage.ts:175:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async Socket.<anonymous> (/home/runner/workspace/server/routes.ts:103:11)
