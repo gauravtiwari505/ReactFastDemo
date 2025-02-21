@@ -33,7 +33,9 @@ os.makedirs(TMP_DIR, exist_ok=True)
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from PDF"""
     try:
-        return extract_text(pdf_path)
+        text = extract_text(pdf_path)
+        log_info(f"Extracted text from PDF: {len(text)} characters") #Added logging for extracted text length.
+        return text
     except Exception as e:
         log_error(f"PDF extraction error: {str(e)}")
         raise ValueError(f"Failed to extract text from PDF: {str(e)}")
@@ -58,6 +60,7 @@ def analyze_resume_section(text: str, section_name: str) -> dict:
         response = model.generate_content(prompt)
         result = extract_json_response(response.text)
         validate_section_result(result)
+        log_info(f"Analysis of {section_name} complete. Score: {result['score']}, Content: {result['content'][:100]}...") #Added logging for section analysis results
         return result
     except Exception as e:
         log_error(f"Error analyzing section {section_name}: {str(e)}")
@@ -79,7 +82,7 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         # Extract text from PDF
         log_progress("Extracting content from PDF...")
         full_text = extract_text_from_pdf(temp_file_path)
-        log_info(f"Extracted {len(full_text)} characters of text")
+
 
         # Analyze overall profile
         log_progress("Analyzing overall profile...")
@@ -92,6 +95,8 @@ def analyze_resume(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         }"""
         overview_response = model.generate_content(f"{overview_prompt}\n\nResume text:\n{full_text}")
         overview_analysis = extract_json_response(overview_response.text)
+        log_info(f"Overall profile analysis complete. Overview: {overview_analysis.get('overview', '')[:100]}...") #Added logging for overall analysis
+
 
         # Define sections to analyze
         sections = [

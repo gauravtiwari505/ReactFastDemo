@@ -35,6 +35,12 @@ export interface IStorage {
 }
 
 export class BigQueryStorage implements IStorage {
+  private _tableAccessVerified = false; // Flag to track table access verification
+  private tables = {
+    analyses: 'resume_analyses',
+    scores: 'resume_scores'
+  };
+
   private async verifyTableAccess(tableName: string): Promise<void> {
     console.log(`Verifying access to table: ${PROJECT_ID}.${DATASET}.${tableName}`);
     const query = `SELECT 1 FROM \`${PROJECT_ID}.${DATASET}.${tableName}\` LIMIT 0`;
@@ -50,7 +56,11 @@ export class BigQueryStorage implements IStorage {
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<ResumeAnalysis> {
     console.log('Starting createAnalysis...');
     try {
-      await this.verifyTableAccess('resume_analyses');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        this._tableAccessVerified = true;
+      }
 
       const timestamp = new Date().toISOString();
       const id = Date.now().toString();
@@ -94,7 +104,11 @@ export class BigQueryStorage implements IStorage {
 
   async getAnalysis(id: string): Promise<ResumeAnalysis | undefined> {
     try {
-      await this.verifyTableAccess('resume_analyses');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        this._tableAccessVerified = true;
+      }
       const [rows] = await bigquery.query({
         query: `
           SELECT 
@@ -123,7 +137,11 @@ export class BigQueryStorage implements IStorage {
 
   async updateAnalysis(id: string, update: Partial<ResumeAnalysis>): Promise<ResumeAnalysis> {
     try {
-      await this.verifyTableAccess('resume_analyses');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        this._tableAccessVerified = true;
+      }
 
       // Prepare update data
       const updateData: any = {
@@ -160,7 +178,11 @@ export class BigQueryStorage implements IStorage {
 
   async createScore(insertScore: InsertScore): Promise<ResumeScore> {
     try {
-      await this.verifyTableAccess('resume_scores');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.scores);
+        this._tableAccessVerified = true;
+      }
       const id = Date.now().toString();
 
       const row = {
@@ -207,8 +229,12 @@ export class BigQueryStorage implements IStorage {
 
   async getAnalytics() {
     try {
-      await this.verifyTableAccess('resume_analyses');
-      await this.verifyTableAccess('resume_scores');
+      // Verify access only on initialization
+      if (!this._tableAccessVerified) {
+        await this.verifyTableAccess(this.tables.analyses);
+        await this.verifyTableAccess(this.tables.scores);
+        this._tableAccessVerified = true;
+      }
       const [rows] = await bigquery.query({
         query: `
           WITH ScoreStats AS (

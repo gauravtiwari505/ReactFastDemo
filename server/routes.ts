@@ -150,15 +150,21 @@ export function registerRoutes(app: Express): Server {
     }
 
     try {
+      console.log(`Starting analysis for ${file.originalname}...`);
+      
       // Create initial analysis record
       const analysis = await storage.createAnalysis({
         fileName: file.originalname,
         uploadedAt: new Date().toISOString(),
         status: "processing"
       });
+      
+      console.log(`Created analysis record with ID: ${analysis.id}`);
 
       // Process the PDF using our Python service
+      console.log('Starting PDF analysis...');
       const results = await analyzePDF(file.buffer, file.originalname, analysis.id);
+      console.log(`Completed PDF analysis. Overview: ${results.overview.slice(0, 1000)}...`);
 
       // Update analysis with final results
       const updatedAnalysis = await storage.updateAnalysis(analysis.id, {
